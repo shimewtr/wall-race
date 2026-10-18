@@ -12,6 +12,7 @@
 // 第 2 版（lookahead）: 1〜5 の代わりに、候補の手（前進と、相手の最短ルートをふさぐ壁）それぞれについて
 //   「その手のあと、相手が 1〜5 のやり方で最善の邪魔（または前進）をしてきたら、歩数の差はどうなるか」
 //   を確かめ、差がいちばん良くなる手を選ぶ。同じなら壁を温存できる前進を選ぶ。
+// 第 3 版（lookahead: 2）: 相手も第 2 版と同じように考えて返してくる、と想定する。
 
 import { candidateWalls } from '../engine/ai';
 import { type GameState, type Move, type Player, applyMove, pawnMoves, shortestDistance } from '../engine/game';
@@ -24,8 +25,8 @@ export interface GuideParams {
   holdUntil: number;
   // 相手の残り歩数がこれより多いうちは、負けていても壁を温存する（序盤に使い切らない）
   saveWallsWhileOpponentFarther: number;
-  // 相手の最善の応手を 1 手だけ想定して手を選ぶ（第 2 版）
-  lookahead?: boolean;
+  // 相手の応手を何段階まで想定するか。0 = 第 1 版、1 = 第 2 版、2 = 第 3 版
+  lookahead?: number;
 }
 
 export const GUIDE_V1: GuideParams = {
@@ -35,17 +36,18 @@ export const GUIDE_V1: GuideParams = {
   saveWallsWhileOpponentFarther: 99,
 };
 
-export const GUIDE_V2: GuideParams = { ...GUIDE_V1, lookahead: true };
+export const GUIDE_V2: GuideParams = { ...GUIDE_V1, lookahead: 1 };
+export const GUIDE_V3: GuideParams = { ...GUIDE_V1, lookahead: 2 };
 
 // 手番側から見た歩数の差（0 以上なら手番側が先着）
 const lead = (s: GameState) => shortestDistance(s, (1 - s.turn) as Player) - shortestDistance(s, s.turn);
 
 export function guideMove(s: GameState, params: GuideParams = GUIDE_V1): Move {
-  if (params.lookahead) return lookaheadMove(s, params);
+  if (params.lookahead) return lookaheadMove(s, params, params.lookahead);
   return simpleMove(s, params);
 }
 
-function lookaheadMove(s: GameState, params: GuideParams): Move {
+function lookaheadMove(s: GameState, params: GuideParams, level: number): Move {
   const me = s.turn;
   const op = (1 - me) as Player;
   // 相手がまだ遠いうちは壁を候補に入れない（温存）
@@ -59,8 +61,8 @@ function lookaheadMove(s: GameState, params: GuideParams): Move {
     if (after.winner === me) {
       score = Infinity;
     } else {
-      // 相手は第 1 版のやり方で最善の手を返してくる、と想定する
-      const reply = applyMove(after, simpleMove(after, { ...params, lookahead: false }));
+      // 相手は 1 段階浅い考え方で最善の手を返してくる、と想定する
+      const reply = applyMove(after, guideMove(after, { ...params, lookahead: level - 1 }));
       if (reply.winner !== null) {
         score = -Infinity;
       } else {
