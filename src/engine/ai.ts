@@ -101,9 +101,35 @@ const WIN = 100000;
 
 class Timeout extends Error {}
 
+// maxDetour の結果のキャッシュ。読みの途中では「壁の配置と 2 つのコマの位置」が同じ局面が何度も出てくる。
+// キーは 32 ビットのハッシュなので衝突はありうるが、評価の一項目の近似なので許容する
+const detourCache = new Map<number, number>();
+const DETOUR_CACHE_LIMIT = 500_000;
+
+function detourKey(s: GameState, attacker: Player): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.hWalls.length; i++) {
+    if (s.hWalls[i]) h = Math.imul(h ^ (i + 1), 0x01000193);
+    if (s.vWalls[i]) h = Math.imul(h ^ (i + 101), 0x01000193);
+  }
+  const v = s.pawns[1 - attacker];
+  const a = s.pawns[attacker];
+  return Math.imul(h ^ (attacker * 6561 + (v.y * 9 + v.x) * 81 + a.y * 9 + a.x), 0x01000193) >>> 0;
+}
+
 // attacker が壁 1 枚で相手（victim）の最短歩数を最大何歩伸ばせるか。壁が尽きていれば 0
-export function maxDetour(s: GameState, attacker: Player, victimDist = shortestDistance(s, (1 - attacker) as Player)): number {
+export function maxDetour(s: GameState, attacker: Player, victimDist?: number): number {
   if (s.wallsLeft[attacker] <= 0) return 0;
+  const key = detourKey(s, attacker);
+  const cached = detourCache.get(key);
+  if (cached !== undefined) return cached;
+  const result = computeMaxDetour(s, attacker, victimDist ?? shortestDistance(s, (1 - attacker) as Player));
+  if (detourCache.size >= DETOUR_CACHE_LIMIT) detourCache.clear();
+  detourCache.set(key, result);
+  return result;
+}
+
+function computeMaxDetour(s: GameState, attacker: Player, victimDist: number): number {
   const victim = (1 - attacker) as Player;
   const path = shortestPath(s, victim);
   const attackerPath = shortestPath(s, attacker);
