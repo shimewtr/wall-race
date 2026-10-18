@@ -1,7 +1,7 @@
 {
-  "iteration": 53557,
-  "stepIteration": 260,
-  "pairs": 981312,
+  "iteration": 53617,
+  "stepIteration": 0,
+  "pairs": 983232,
   "theta": {
     "pathDiff": 10,
     "rowDiff": 2.248,
@@ -14,5 +14,5 @@
     "lockedRace": 30.298,
     "wallThreat": 10.708
   },
-  "updatedAt": "2026-10-18T11:55:06.166Z"
+  "updatedAt": "2026-10-18T12:03:23.671Z"
 }
