@@ -97,11 +97,10 @@ const WIN = 100000;
 
 class Timeout extends Error {}
 
-export function features(s: GameState): Weights {
+// myDist / opDist（手番側・相手の最短歩数）が分かっていれば渡すと探索を省ける
+export function features(s: GameState, myDist = shortestDistance(s, s.turn), opDist = shortestDistance(s, (1 - s.turn) as Player)): Weights {
   const me = s.turn;
   const op = (1 - me) as Player;
-  const myDist = shortestDistance(s, me);
-  const opDist = shortestDistance(s, op);
   const my = s.pawns[me];
   const o = s.pawns[op];
   return {
@@ -120,10 +119,10 @@ export function features(s: GameState): Weights {
 }
 
 // 手番側から見た静的評価
-export function evaluate(s: GameState, w: Weights = DEFAULT_WEIGHTS): number {
+export function evaluate(s: GameState, w: Weights = DEFAULT_WEIGHTS, myDist?: number, opDist?: number): number {
   if (s.winner !== null) return s.winner === s.turn ? WIN : -WIN;
   if (s.draw) return 0;
-  const f = features(s);
+  const f = features(s, myDist, opDist);
   let score = 0;
   for (const k of FEATURE_NAMES) score += w[k] * f[k];
   return score;
@@ -150,6 +149,17 @@ function cutsPath(path: Pos[], x: number, y: number, o: 'h' | 'v'): boolean {
 //   - 自分の最短経路に接していて、自分の経路は伸ばさない壁（相手に道をふさがれないための守りの壁）
 // も候補にする。根（いま指す手）でだけ使う。
 export function candidateWalls(s: GameState, wide = false): Move[] {
+  return wallCandidates(s, wide).map((c) => c.m);
+}
+
+// 壁を置いた後の歩数（-1 は「その人の最短経路を横切らないので変わらない」）も一緒に返す。探索で距離を引き継ぐのに使う
+interface WallCandidate {
+  m: Move;
+  opAfter: number;
+  meAfter: number;
+}
+
+function wallCandidates(s: GameState, wide: boolean): WallCandidate[] {
   if (s.wallsLeft[s.turn] <= 0) return [];
   const me = s.turn;
   const op = (1 - me) as Player;
@@ -157,28 +167,31 @@ export function candidateWalls(s: GameState, wide = false): Move[] {
   if (!path) return [];
   const myPath = shortestPath(s, me);
   const seen = new Set<number>();
-  const result: Move[] = [];
+  const result: WallCandidate[] = [];
   // 合法判定（isLegalWall と同じ結果）。今の最短経路を横切らない壁ではその人の道はふさがらないので、
-  // 経路を横切るときだけ探索し直す
-  const legal = (x: number, y: number, o: 'h' | 'v') => {
-    if (!wallFits(s, x, y, o)) return false;
+  // 経路を横切るときだけ探索し直す。不合法なら null
+  const legal = (x: number, y: number, o: 'h' | 'v'): WallCandidate | null => {
+    if (!wallFits(s, x, y, o)) return null;
+    const m: Move = { type: 'wall', x, y, o };
     const cutsOp = cutsPath(path, x, y, o);
     const cutsMe = myPath !== null && cutsPath(myPath, x, y, o);
-    if (!cutsOp && !cutsMe) return true;
+    if (!cutsOp && !cutsMe) return { m, opAfter: -1, meAfter: -1 };
     const walls = o === 'h' ? s.hWalls : s.vWalls;
     const i = y * WALL_SLOTS + x;
     walls[i] = 1;
-    const ok = (!cutsOp || shortestDistance(s, op) >= 0) && (!cutsMe || shortestDistance(s, me) >= 0);
+    const opAfter = cutsOp ? shortestDistance(s, op) : -1;
+    const meAfter = cutsMe ? shortestDistance(s, me) : -1;
     walls[i] = 0;
-    return ok;
+    if ((cutsOp && opAfter < 0) || (cutsMe && meAfter < 0)) return null;
+    return { m, opAfter, meAfter };
   };
   const add = (x: number, y: number, o: 'h' | 'v', keep: (m: Move) => boolean = () => true) => {
     if (x < 0 || y < 0 || x >= WALL_SLOTS || y >= WALL_SLOTS) return;
     const key = (o === 'h' ? 0 : 64) + y * WALL_SLOTS + x;
     if (seen.has(key)) return;
     seen.add(key);
-    const m: Move = { type: 'wall', x, y, o };
-    if (legal(x, y, o) && keep(m)) result.push(m);
+    const c = legal(x, y, o);
+    if (c && keep(c.m)) result.push(c);
   };
   // マス (cx, cy) の辺に接する壁のアンカー
   const around = (cx: number, cy: number, keep?: (m: Move) => boolean) => {
@@ -212,15 +225,29 @@ export function candidateWalls(s: GameState, wide = false): Move[] {
   return result;
 }
 
-function orderedMoves(s: GameState, wide = false): Move[] {
+// 探索で指す手。d は前進した後の自分の歩数、opAfter / meAfter は壁を置いた後の歩数（-1 は変わらない）
+interface Candidate {
+  m: Move;
+  d: number;
+  opAfter: number;
+  meAfter: number;
+}
+
+function orderedMoves(s: GameState, wide = false): Candidate[] {
   // 前進の手は「移動先からゴールまでの歩数」が小さい順。距離はゴール側から 1 回で全マス分求める
   const dist = goalDistances(s, s.turn);
-  const pawns = pawnMoves(s).map((p) => ({
-    m: { type: 'pawn', x: p.x, y: p.y } as Move,
-    d: dist[p.y * SIZE + p.x] < 0 ? Infinity : dist[p.y * SIZE + p.x],
-  }));
+  const pawns: Candidate[] = pawnMoves(s).map((p) => {
+    const d = dist[p.y * SIZE + p.x];
+    return { m: { type: 'pawn', x: p.x, y: p.y }, d: d < 0 ? Infinity : d, opAfter: -1, meAfter: -1 };
+  });
   pawns.sort((a, b) => a.d - b.d);
-  return [...pawns.map((p) => p.m), ...candidateWalls(s, wide)];
+  return [...pawns, ...wallCandidates(s, wide).map((c) => ({ ...c, d: -1 }))];
+}
+
+// 手を指した後の局面の [手番側の歩数, 相手の歩数]（手番が入れ替わるので myDist / opDist も入れ替わる）
+function childDistances(c: Candidate, myDist: number, opDist: number): [number, number] {
+  if (c.m.type === 'pawn') return [opDist, c.d];
+  return [c.opAfter < 0 ? opDist : c.opAfter, c.meAfter < 0 ? myDist : c.meAfter];
 }
 
 export function search(s: GameState, opts: SearchOptions): SearchResult {
@@ -231,7 +258,15 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
   const deadline = opts.timeMs ? Date.now() + opts.timeMs : Infinity;
   let nodes = 0;
 
-  const negamax = (st: GameState, depth: number, alpha: number, beta: number, ply: number): number => {
+  const negamax = (
+    st: GameState,
+    depth: number,
+    alpha: number,
+    beta: number,
+    ply: number,
+    myDist: number,
+    opDist: number,
+  ): number => {
     nodes++;
     if ((nodes & 255) === 0 && Date.now() > deadline) throw new Timeout();
     if (isOver(st)) {
@@ -239,58 +274,62 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
       if (st.winner === null) return 0;
       return st.winner === st.turn ? WIN - ply : -WIN + ply;
     }
-    if (depth === 0) return evaluate(st, weights);
+    if (depth === 0) return evaluate(st, weights, myDist, opDist);
     let best = -Infinity;
-    for (const m of orderedMoves(st)) {
-      const undo = makeMove(st, m);
-      const v = -negamax(st, depth - 1, -beta, -alpha, ply + 1);
-      unmakeMove(st, m, undo);
+    for (const c of orderedMoves(st)) {
+      const [cm, co] = childDistances(c, myDist, opDist);
+      const undo = makeMove(st, c.m);
+      const v = -negamax(st, depth - 1, -beta, -alpha, ply + 1, cm, co);
+      unmakeMove(st, c.m, undo);
       if (v > best) best = v;
       if (v > alpha) alpha = v;
       if (alpha >= beta) break;
     }
-    return best === -Infinity ? evaluate(st, weights) : best;
+    return best === -Infinity ? evaluate(st, weights, myDist, opDist) : best;
   };
 
   const rootMoves = orderedMoves(s, opts.wideRoot ?? true);
+  const rootMy = shortestDistance(s, s.turn);
+  const rootOp = shortestDistance(s, (1 - s.turn) as Player);
   const recent = opts.recent ?? [];
   const repeatPenalty = opts.repeatPenalty ?? REPEAT_PENALTY;
   const penalty = (m: Move) =>
     m.type === 'pawn' && recent.some((p) => p.x === m.x && p.y === m.y) ? repeatPenalty : 0;
   if (rootMoves.length === 0) throw new Error('no legal moves');
-  let result: SearchResult = { move: rootMoves[0], score: 0, depth: 0, nodes: 0 };
+  let result: SearchResult = { move: rootMoves[0].m, score: 0, depth: 0, nodes: 0 };
 
   for (let depth = 1; depth <= opts.maxDepth; depth++) {
     // 時間切れで途中で抜けると盤面が戻らないので、深さごとに作業用の複製を使う
     const work = cloneState(s);
     try {
       let bestScore = -Infinity;
-      let bestMove = rootMoves[0];
+      let bestMove = rootMoves[0].m;
       let alpha = -Infinity;
-      const scored: Array<{ m: Move; v: number }> = [];
-      for (const m of rootMoves) {
+      const scored: Array<{ c: Candidate; v: number }> = [];
+      for (const c of rootMoves) {
+        const [cm, co] = childDistances(c, rootMy, rootOp);
         // 最善手から margin 以内の手も正確な値が出るよう、窓を margin 分広げて読む
-        const undo = makeMove(work, m);
+        const undo = makeMove(work, c.m);
         const v =
-          -negamax(work, depth - 1, -Infinity, -(alpha - margin), 1) -
-          penalty(m) +
+          -negamax(work, depth - 1, -Infinity, -(alpha - margin), 1, cm, co) -
+          penalty(c.m) +
           (noise ? (rng() - 0.5) * noise : 0);
-        unmakeMove(work, m, undo);
-        scored.push({ m, v });
+        unmakeMove(work, c.m, undo);
+        scored.push({ c, v });
         if (v > bestScore) {
           bestScore = v;
-          bestMove = m;
+          bestMove = c.m;
         }
         if (v > alpha) alpha = v;
       }
       if (margin > 0) {
         const near = scored.filter((x) => x.v >= bestScore - margin);
-        bestMove = near[Math.floor(rng() * near.length)].m;
+        bestMove = near[Math.floor(rng() * near.length)].c.m;
       }
       result = { move: bestMove, score: bestScore, depth, nodes };
       // 次の深さでは良かった手から読む
       scored.sort((a, b) => b.v - a.v);
-      rootMoves.splice(0, rootMoves.length, ...scored.map((x) => x.m));
+      rootMoves.splice(0, rootMoves.length, ...scored.map((x) => x.c));
       if (Math.abs(bestScore) > WIN / 2) break;
     } catch (e) {
       if (e instanceof Timeout) break;
