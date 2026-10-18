@@ -40,6 +40,8 @@ export const GUIDE_V1: GuideParams = {
 
 export const GUIDE_V2: GuideParams = { ...GUIDE_V1, lookahead: 1 };
 export const GUIDE_V3: GuideParams = { ...GUIDE_V1, lookahead: 2 };
+// docs/guide.md に書いている手順（第 2 版 + 壁 1 枚 = 2 歩で形勢を数える）
+export const GUIDE_CURRENT: GuideParams = { ...GUIDE_V2, wallValue: 2 };
 
 // 手番側から見た歩数の差（0 以上なら手番側が先着）
 const lead = (s: GameState) => shortestDistance(s, (1 - s.turn) as Player) - shortestDistance(s, s.turn);
