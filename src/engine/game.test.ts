@@ -3,6 +3,7 @@ import {
   type GameState,
   applyMove,
   cloneState,
+  wallFits,
   goalDistances,
   makeMove,
   shortestPath,
@@ -328,11 +329,12 @@ describe('高速化した処理が元の処理と一致する', () => {
       let best = 0;
       const tryWall = (x: number, y: number, o: 'h' | 'v') => {
         if (x < 0 || y < 0 || x >= 8 || y >= 8) return;
+        // 壁を置く側の道をふさぐかどうかは見ない（maxDetour と同じ近似）。相手の道を完全にふさぐ壁は除く
+        if (!wallFits(s, x, y, o)) return;
         const t = cloneState(s);
-        t.turn = attacker;
-        t.wallsLeft[attacker] = 1;
-        if (!isLegalWall(t, x, y, o)) return;
-        best = Math.max(best, shortestDistance(applyMove(t, { type: 'wall', x, y, o }), victim) - base);
+        (o === 'h' ? t.hWalls : t.vWalls)[y * 8 + x] = 1;
+        const d = shortestDistance(t, victim);
+        if (d >= 0) best = Math.max(best, d - base);
       };
       for (let i = 0; i + 1 < path.length; i++) {
         const [a, b] = [path[i], path[i + 1]];

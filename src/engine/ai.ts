@@ -6,11 +6,9 @@ import {
   type Move,
   type Player,
   type Pos,
-  DIRS,
   SIZE,
   WALL_SLOTS,
   applyMove,
-  canStep,
   cloneState,
   goalDistances,
   makeMove,
@@ -137,101 +135,21 @@ export function maxDetour(s: GameState, attacker: Player, victimDist?: number): 
   return result;
 }
 
-// 相手の最短ルートを「何通りあるか」まで数えておき、壁がふさぐ辺を通る最短ルートが全部ではなければ
-// （同じ長さの別ルートが残るので）遠回りは 0 歩と分かる。経路探索は本当に道をふさぐ壁のときだけする。
-const FROM_VICTIM = new Int16Array(SIZE * SIZE);
-const TO_GOAL = new Int16Array(SIZE * SIZE);
-const ORDER = new Int16Array(SIZE * SIZE);
-const PATHS_FROM = new Float64Array(SIZE * SIZE);
-const PATHS_TO = new Float64Array(SIZE * SIZE);
-
+// 壁を置く側の道までふさいでしまう壁かどうかは確かめない（そうなる壁はまれで、評価の一項目の近似としては許容する。
+// 確かめると 1 回ごとに経路探索が 1 回増える）。相手の道を完全にふさぐ壁は置けないので除く
 function computeMaxDetour(s: GameState, attacker: Player, victimDist: number): number {
   const victim = (1 - attacker) as Player;
   const path = shortestPath(s, victim);
-  const attackerPath = shortestPath(s, attacker);
-  if (!path || !attackerPath) return 0;
-
-  // 相手のコマからの距離（BFS の順番も記録）と、ゴールまでの距離
-  TO_GOAL.set(goalDistances(s, victim));
-  FROM_VICTIM.fill(-1);
-  const start = s.pawns[victim].y * SIZE + s.pawns[victim].x;
-  FROM_VICTIM[start] = 0;
-  let head = 0;
-  let tail = 0;
-  ORDER[tail++] = start;
-  while (head < tail) {
-    const idx = ORDER[head++];
-    const x = idx % SIZE;
-    const y = (idx - x) / SIZE;
-    for (const [dx, dy] of DIRS) {
-      if (!canStep(s, x, y, dx, dy)) continue;
-      const n = (y + dy) * SIZE + (x + dx);
-      if (FROM_VICTIM[n] !== -1) continue;
-      FROM_VICTIM[n] = FROM_VICTIM[idx] + 1;
-      ORDER[tail++] = n;
-    }
-  }
-  const L = victimDist;
-  const onPath = (c: number) => FROM_VICTIM[c] >= 0 && TO_GOAL[c] >= 0 && FROM_VICTIM[c] + TO_GOAL[c] === L;
-  // c から隣の n への 1 歩が最短ルートの一部か
-  const forward = (c: number, n: number) =>
-    onPath(c) && onPath(n) && FROM_VICTIM[n] === FROM_VICTIM[c] + 1 && TO_GOAL[c] > 0;
-  // コマから各マスまで / 各マスからゴールまでの最短ルートの数
-  PATHS_FROM.fill(0);
-  PATHS_TO.fill(0);
-  PATHS_FROM[start] = 1;
-  for (let k = 0; k < tail; k++) {
-    const c = ORDER[k];
-    if (!onPath(c)) continue;
-    const x = c % SIZE;
-    const y = (c - x) / SIZE;
-    for (const [dx, dy] of DIRS) {
-      if (!canStep(s, x, y, dx, dy)) continue;
-      const n = (y + dy) * SIZE + (x + dx);
-      if (forward(c, n)) PATHS_FROM[n] += PATHS_FROM[c];
-    }
-  }
-  for (let k = tail - 1; k >= 0; k--) {
-    const c = ORDER[k];
-    if (!onPath(c)) continue;
-    if (TO_GOAL[c] === 0) {
-      PATHS_TO[c] = 1;
-      continue;
-    }
-    const x = c % SIZE;
-    const y = (c - x) / SIZE;
-    for (const [dx, dy] of DIRS) {
-      if (!canStep(s, x, y, dx, dy)) continue;
-      const n = (y + dy) * SIZE + (x + dx);
-      if (forward(c, n)) PATHS_TO[c] += PATHS_TO[n];
-    }
-  }
-  const total = PATHS_TO[start];
-  // 辺 a-b を通る最短ルートの数
-  const through = (a: number, b: number) => {
-    if (forward(a, b)) return PATHS_FROM[a] * PATHS_TO[b];
-    if (forward(b, a)) return PATHS_FROM[b] * PATHS_TO[a];
-    return 0;
-  };
-
+  if (!path) return 0;
   let best = 0;
   const tryWall = (x: number, y: number, o: 'h' | 'v') => {
     if (x < 0 || y < 0 || x >= WALL_SLOTS || y >= WALL_SLOTS || !wallFits(s, x, y, o)) return;
-    // 壁がふさぐ 2 本の辺。それらを通る最短ルートが全部でなければ、別の最短ルートが残る
-    const c = y * SIZE + x;
-    const cut =
-      o === 'h'
-        ? through(c, c + SIZE) + through(c + 1, c + 1 + SIZE)
-        : through(c, c + 1) + through(c + SIZE, c + SIZE + 1);
-    if (cut < total) return;
     const walls = o === 'h' ? s.hWalls : s.vWalls;
     const i = y * WALL_SLOTS + x;
     walls[i] = 1;
     const d = shortestDistance(s, victim);
-    // 自分の道までふさぐ壁は置けない（記録を更新しそうなときだけ確かめる）
-    const ok = d >= 0 && d - victimDist > best && (!cutsPath(attackerPath, x, y, o) || shortestDistance(s, attacker) >= 0);
     walls[i] = 0;
-    if (ok) best = d - victimDist;
+    if (d >= 0 && d - victimDist > best) best = d - victimDist;
   };
   for (let k = 0; k + 1 < path.length; k++) {
     const a = path[k];
