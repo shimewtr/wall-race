@@ -1,4 +1,4 @@
-import { type Level, recentCells } from '../engine/ai';
+import { type Level, WIN, maxDetour, recentCells } from '../engine/ai';
 import {
   type GameState,
   type Move,
@@ -13,8 +13,9 @@ import {
   isOver,
   moveToString,
   pawnMoves,
+  shortestDistance,
 } from '../engine/game';
-import type { AiRequest } from './ai.worker';
+import { type AiRequest, type AiResponse, EVAL_DEPTH } from './ai.worker';
 import { champion } from './champion';
 
 type Mode = 'human-ai' | 'ai-human' | 'human-human' | 'ai-ai';
@@ -38,10 +39,18 @@ let requestId = 0;
 let pendingWall: { x: number; y: number; o: Orientation } | null = null;
 
 const worker = new Worker(new URL('./ai.worker.ts', import.meta.url), { type: 'module' });
-worker.onmessage = (e: MessageEvent<{ id: number; move: Move }>) => {
-  if (e.data.id !== requestId) return; // 新規対局・やり直しで古くなった結果は捨てる
+worker.onmessage = (e: MessageEvent<AiResponse>) => {
+  if (e.data.kind !== 'move' || e.data.id !== requestId) return; // 新規対局・やり直しで古くなった結果は捨てる
   thinking = false;
   play(e.data.move);
+};
+
+// 形勢判断は AI の手番の計算を邪魔しないよう別のワーカーで行う
+const evalWorker = new Worker(new URL('./ai.worker.ts', import.meta.url), { type: 'module' });
+let evalId = 0;
+evalWorker.onmessage = (e: MessageEvent<AiResponse>) => {
+  if (e.data.kind !== 'eval' || e.data.id !== evalId) return;
+  renderEval(e.data.score);
 };
 
 const current = () => history[history.length - 1];
@@ -65,6 +74,7 @@ function maybeAskAi() {
   thinking = true;
   render();
   const req: AiRequest = {
+    kind: 'move',
     id: ++requestId,
     state: s,
     level: levelEl.value as Level,
@@ -224,6 +234,7 @@ function render() {
   }
 
   statusEl.textContent = statusText(s);
+  requestEval(s);
 
   recordEl.replaceChildren(
     ...Array.from({ length: Math.ceil(moves.length / 2) }, (_, i) => {
@@ -234,6 +245,76 @@ function render() {
   );
   recordEl.parentElement!.scrollTop = recordEl.parentElement!.scrollHeight;
 }
+
+// ---- 形勢の表示 ----
+
+const evalEl = $<HTMLElement>('eval');
+const showEvalEl = $<HTMLInputElement>('show-eval');
+const EVAL_KEY = 'wall-race:show-eval';
+try {
+  showEvalEl.checked = localStorage.getItem(EVAL_KEY) !== 'off';
+} catch {
+  // 保存できない環境では毎回表示する
+}
+
+const playerLabel = (p: Player) =>
+  mode === 'human-human' ? PLAYER_NAMES[p] : `${PLAYER_NAMES[p]}（${isHuman(p) ? 'あなた' : 'AI'}）`;
+
+let evaluatedState: GameState | null = null;
+
+function requestEval(s: GameState) {
+  evalEl.classList.toggle('hidden', !showEvalEl.checked);
+  if (!showEvalEl.checked || s === evaluatedState) return;
+  evaluatedState = s;
+  renderBreakdown(s);
+  if (isOver(s)) {
+    evalId++;
+    renderEval(null);
+    return;
+  }
+  $('eval-text').textContent = '判断中…';
+  evalWorker.postMessage({ kind: 'eval', id: ++evalId, state: s } satisfies AiRequest);
+}
+
+// score は手番側から見た評価値（1 歩 = 10 点）。null は決着済み
+function renderEval(score: number | null) {
+  const s = current();
+  let blue: number; // 青から見た評価値
+  let text: string;
+  if (score === null) {
+    blue = s.winner === 0 ? WIN : s.winner === 1 ? -WIN : 0;
+    text = s.winner === null ? '引き分け' : `${playerLabel(s.winner)}の勝ち`;
+  } else {
+    blue = s.turn === 0 ? score : -score;
+    const leader = (blue > 0 ? 0 : 1) as Player;
+    const steps = Math.abs(blue) / 10;
+    if (Math.abs(blue) > WIN / 2) text = `${playerLabel(leader)}の勝ちを読み切り`;
+    else if (steps < 0.3) text = '互角';
+    else text = `${playerLabel(leader)}が ${steps.toFixed(1)} 歩分有利`;
+  }
+  const pct = Math.abs(blue) > WIN / 2 ? (blue > 0 ? 100 : 0) : 50 + 50 * Math.tanh(blue / 10 / 4);
+  $('eval-fill').style.width = `${pct}%`;
+  $('eval-text').textContent = text;
+}
+
+function renderBreakdown(s: GameState) {
+  const cells = (f: (p: Player) => string) => ([0, 1] as const).map((p) => `<td>${f(p)}</td>`).join('');
+  $('eval-table').innerHTML = `
+    <tr><th></th>${([0, 1] as const).map((p) => `<th><span class="dot p${p}"></span>${PLAYER_NAMES[p]}</th>`).join('')}</tr>
+    <tr><th>ゴールまでの残り歩数</th>${cells((p) => String(shortestDistance(s, p)))}</tr>
+    <tr><th>残りの壁</th>${cells((p) => `${s.wallsLeft[p]} 枚`)}</tr>
+    <tr><th>壁 1 枚で相手を遠回りさせられる歩数</th>${cells((p) => (s.wallsLeft[p] > 0 ? `${maxDetour(s, p)} 歩` : '—'))}</tr>`;
+}
+
+showEvalEl.addEventListener('change', () => {
+  try {
+    localStorage.setItem(EVAL_KEY, showEvalEl.checked ? 'on' : 'off');
+  } catch {
+    // 保存できなくても表示の切り替えはできる
+  }
+  evaluatedState = null;
+  requestEval(current());
+});
 
 function statusText(s: GameState): string {
   const name = (p: Player) =>
@@ -256,6 +337,7 @@ function statusText(s: GameState): string {
   link.href = `https://github.com/shimewtr/wall-race/commit/${__APP_COMMIT__}`;
   link.textContent = `v${__APP_COMMIT__.slice(0, 7)}`;
   $('ai-gen').replaceChildren(`${ai} · `, link, `（${built}）`);
+  $('eval-note').textContent = `${champion ? `第 ${champion.generation} 世代` : '初期設定'}の AI が ${EVAL_DEPTH} 手読みで判断した形勢。1 歩 = 10 点として「何歩分の差か」で表示`;
 }
 
 $('new-game').addEventListener('click', newGame);

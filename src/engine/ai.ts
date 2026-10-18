@@ -97,7 +97,8 @@ export interface SearchResult {
   nodes: number;
 }
 
-const WIN = 100000;
+// 勝ちを読み切ったときの評価値（実際は WIN − 勝つまでの手数）
+export const WIN = 100000;
 
 class Timeout extends Error {}
 

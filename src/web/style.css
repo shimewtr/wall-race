@@ -220,6 +220,104 @@ body {
   opacity: 0.18;
 }
 
+/* ---- 形勢 ---- */
+
+.eval {
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.eval-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.eval-head h2 {
+  margin: 0;
+}
+
+.toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.eval.hidden .eval-body {
+  display: none;
+}
+
+.eval-bar {
+  position: relative;
+  height: 10px;
+  margin-top: 8px;
+  border-radius: 5px;
+  background: var(--p1);
+  overflow: hidden;
+}
+
+.eval-fill {
+  width: 50%;
+  height: 100%;
+  background: var(--p0);
+  transition: width 0.3s ease;
+}
+
+/* 互角の位置の目印 */
+.eval-bar::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--surface);
+}
+
+.eval-text {
+  margin: 6px 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.eval-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.eval-table th,
+.eval-table td {
+  padding: 2px 4px;
+  text-align: right;
+  font-weight: normal;
+}
+
+.eval-table th:first-child {
+  text-align: left;
+  color: var(--muted);
+}
+
+.eval-table tr:first-child th {
+  font-weight: 600;
+}
+
+.eval-table .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+}
+
+.eval-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 /* ---- サイドパネル ---- */
 
 .panel {
