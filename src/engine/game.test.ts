@@ -318,6 +318,39 @@ describe('高速化した処理が元の処理と一致する', () => {
     }
   });
 
+  it('maxDetour は壁を 1 枚ずつ置いて測った場合と同じ', () => {
+    // 参照実装: 相手の最短経路の各歩をふさぐ壁を 1 枚ずつ置いて、合法なものの中で最大の遠回りを測る
+    const reference = (s: GameState, attacker: 0 | 1) => {
+      if (s.wallsLeft[attacker] <= 0) return 0;
+      const victim = (1 - attacker) as 0 | 1;
+      const base = shortestDistance(s, victim);
+      const path = shortestPath(s, victim)!;
+      let best = 0;
+      const tryWall = (x: number, y: number, o: 'h' | 'v') => {
+        if (x < 0 || y < 0 || x >= 8 || y >= 8) return;
+        const t = cloneState(s);
+        t.turn = attacker;
+        t.wallsLeft[attacker] = 1;
+        if (!isLegalWall(t, x, y, o)) return;
+        best = Math.max(best, shortestDistance(applyMove(t, { type: 'wall', x, y, o }), victim) - base);
+      };
+      for (let i = 0; i + 1 < path.length; i++) {
+        const [a, b] = [path[i], path[i + 1]];
+        if (a.x === b.x) {
+          tryWall(a.x, Math.min(a.y, b.y), 'h');
+          tryWall(a.x - 1, Math.min(a.y, b.y), 'h');
+        } else {
+          tryWall(Math.min(a.x, b.x), a.y, 'v');
+          tryWall(Math.min(a.x, b.x), a.y - 1, 'v');
+        }
+      }
+      return best;
+    };
+    for (const s of randomStates(300)) {
+      for (const p of [0, 1] as const) expect(maxDetour(s, p)).toBe(reference(s, p));
+    }
+  });
+
   it('makeMove → unmakeMove で元の盤面に戻る', () => {
     for (const s of randomStates(100)) {
       const before = JSON.stringify({ ...s, hWalls: [...s.hWalls], vWalls: [...s.vWalls] });
