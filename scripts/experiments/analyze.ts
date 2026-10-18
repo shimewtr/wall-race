@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { withDefaults } from '../../src/engine/ai';
+import { OPENING_PLIES } from '../../src/train/match';
 import type { GameRecord, MoveRecord } from '../../src/train/record';
 import { RecordPool } from '../lib/pool';
 
@@ -127,6 +128,8 @@ out(`両者の壁が尽きた局面で「手番側は同じ歩数なら先着」
 
 // ---- 序盤 ----
 out('\n## 序盤の手（最初の 4 手）');
+const firstTen = new Set(records.map((g) => g.moves.slice(0, 10).map((m) => m.move).join(' ')));
+out(`最初の 10 手が異なる対局: ${firstTen.size} 通り / ${records.length} 局（序盤 ${OPENING_PLIES} 手は最善から 1 歩分以内の手をランダムに選ぶ）`);
 const openings = new Map<string, number>();
 for (const g of records) {
   const k = g.moves.slice(0, 4).map((m) => m.move).join(' ');

@@ -2,7 +2,7 @@
 
 import { type Weights, candidateWalls, recentCells, search } from '../engine/ai';
 import { type GameState, type Move, type Player, applyMove, initialState, isOver, moveToString, shortestDistance } from '../engine/game';
-import { rngFrom } from './match';
+import { OPENING_PLIES, marginAt, rngFrom } from './match';
 
 export type WallKind = 'block' | 'near' | 'guard';
 
@@ -42,7 +42,13 @@ export function playRecorded(job: RecordJob): GameRecord {
   while (!isOver(s)) {
     const me = s.turn;
     const op = (1 - me) as Player;
-    const result = search(s, { maxDepth: job.depth, weights: job.weights, margin: 1, rng, recent: recentCells(history, me) });
+    const result = search(s, {
+      maxDepth: job.depth,
+      weights: job.weights,
+      margin: marginAt(s.ply, 1, OPENING_PLIES),
+      rng,
+      recent: recentCells(history, me),
+    });
     const m = result.move;
     let kind: WallKind | undefined;
     if (m.type === 'wall') {

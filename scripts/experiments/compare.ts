@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type SearchOptions, type Weights, search, withDefaults } from '../../src/engine/ai';
 import { type GameState, applyMove, initialState, isOver } from '../../src/engine/game';
-import { rngFrom } from '../../src/train/match';
+import { OPENING_PLIES, rngFrom } from '../../src/train/match';
 import { PairPool } from '../lib/pool';
 
 const { values: args } = parseArgs({
@@ -49,7 +49,7 @@ const scores = await pool.runAll(
   Array.from({ length: pairs }, (_, i) => ({
     a: wA,
     b: wB,
-    opts: { depth, margin: 1, openingPlies: 0, seed: 7_000_000 + i, options: [optA, optB] as [typeof optA, typeof optB] },
+    opts: { depth, margin: 1, openingPlies: OPENING_PLIES, seed: 7_000_000 + i, options: [optA, optB] as [typeof optA, typeof optB] },
   })),
 );
 await pool.close();

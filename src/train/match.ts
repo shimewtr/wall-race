@@ -1,7 +1,7 @@
 // 自己対戦の 1 局を実行する。Node のワーカーからも呼ばれるので DOM・fs に依存しない。
 
 import { type SearchOptions, type Weights, recentCells, search } from '../engine/ai';
-import { type GameState, type Player, applyMove, initialState, isOver, pawnMoves } from '../engine/game';
+import { type GameState, type Player, applyMove, initialState, isOver } from '../engine/game';
 
 export interface MatchConfig {
   // [先手の重み, 後手の重み]
@@ -9,12 +9,21 @@ export interface MatchConfig {
   depth: number;
   // 最善手から margin 点以内の手からランダムに選ぶ（同じ棋譜の繰り返しを避ける）
   margin: number;
-  // 序盤に完全ランダムなコマ移動をする手数
+  // 序盤のこの手数だけは、最善から OPENING_MARGIN 点以内の手からランダムに選ぶ（展開をばらけさせる）
   openingPlies: number;
   seed: number;
   // 先手・後手それぞれの追加の探索オプション（実験で探索方法を比べる用）
   options?: [Partial<SearchOptions>, Partial<SearchOptions>];
 }
+
+// 序盤にばらけさせる手数と幅（1 歩 = 10 点。最善から 1 歩分以内の手なら選ぶ）。
+// これが無いと自己対戦の序盤が毎回同じになり、統計や勝率が特定の展開に偏る
+export const OPENING_PLIES = 6;
+export const OPENING_MARGIN = 10;
+
+// その手数での選び方の幅
+export const marginAt = (ply: number, margin: number, openingPlies: number) =>
+  ply < openingPlies ? Math.max(margin, OPENING_MARGIN) : margin;
 
 // 再現性のための軽量な乱数（mulberry32）
 export function rngFrom(seed: number): () => number {
@@ -34,21 +43,15 @@ export function playMatch(cfg: MatchConfig): Player | null {
   const history: GameState[] = [initialState()];
   let s = history[0];
   while (!isOver(s)) {
-    if (s.ply < cfg.openingPlies) {
-      const ps = pawnMoves(s);
-      const p = ps[Math.floor(rng() * ps.length)];
-      s = applyMove(s, { type: 'pawn', x: p.x, y: p.y });
-    } else {
-      const { move } = search(s, {
-        ...cfg.options?.[s.turn],
-        maxDepth: cfg.depth,
-        weights: cfg.weights[s.turn],
-        margin: cfg.margin,
-        rng,
-        recent: recentCells(history, s.turn),
-      });
-      s = applyMove(s, move);
-    }
+    const { move } = search(s, {
+      ...cfg.options?.[s.turn],
+      maxDepth: cfg.depth,
+      weights: cfg.weights[s.turn],
+      margin: marginAt(s.ply, cfg.margin, cfg.openingPlies),
+      rng,
+      recent: recentCells(history, s.turn),
+    });
+    s = applyMove(s, move);
     history.push(s);
   }
   return s.winner;

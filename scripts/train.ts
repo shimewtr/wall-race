@@ -18,6 +18,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, write
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { FEATURE_NAMES, type Feature, type Weights, withDefaults } from '../src/engine/ai';
+import { OPENING_PLIES } from '../src/train/match';
 import { PairPool } from './lib/pool';
 
 const { values: args } = parseArgs({
@@ -41,10 +42,11 @@ const SOURCE = args.source ?? (process.env.GITHUB_ACTIONS ? 'actions' : 'mac');
 const DEPTH = 3;
 // 最善から 0.1 歩以内の手をランダムに選ぶ。弱い手は選ばずに棋譜の多様性を確保する
 const MARGIN = 1;
-const OPENING_PLIES = 0;
 const PAIRS_PER_ITER = 16;
 // 判定に使う読みの深さと対局数（深さごとに測って平均する）
 const GATE_SUITE: Record<number, number> = { [DEPTH]: 200 };
+// 判定条件の識別子（深さ・対局数・序盤のばらけさせ方）
+const GATE_VERSION = `${Object.entries(GATE_SUITE).map(([d, n]) => `d${d}x${n}`).join('-')}-o${OPENING_PLIES}`;
 // 昇格条件: 平均勝率が GATE_THRESHOLD 以上、どの深さでも GATE_FLOOR 以上、初期の重みへの勝率が下がっていない
 const GATE_FLOOR = 0.42;
 const INITIAL_TOLERANCE = 0.03;
@@ -82,6 +84,8 @@ interface Champion {
   // 学習前の初期の重みに対する勝率（強くなっているかの物差し）
   vsInitial?: number;
   vsInitialByDepth?: Record<string, number>;
+  // vsInitial を測ったときの判定条件（条件が変わったら測り直す）
+  gateVersion?: string;
 }
 
 const readJson = <T>(path: string): T => JSON.parse(readFileSync(path, 'utf8')) as T;
@@ -263,9 +267,9 @@ async function runOnce(pool: PairPool, minutes: number) {
     };
 
     const champion = loadChampion();
-    // 判定の条件（深さ）が変わっていたら、チャンピオンの対初期勝率を今の条件で測り直す
-    const suiteKey = (r?: Record<string, number>) => Object.keys(r ?? {}).sort().join(',');
-    if (suiteKey(champion.vsInitialByDepth) !== suiteKey(GATE_SUITE)) {
+    // 判定の条件が変わっていたら、チャンピオンの対初期勝率を今の条件で測り直す
+    if (champion.gateVersion !== GATE_VERSION) {
+      champion.gateVersion = GATE_VERSION;
       const m = await gate(pool, champion.weights, withDefaults());
       champion.vsInitial = m.avg;
       champion.vsInitialByDepth = m.byDepth;
@@ -301,6 +305,7 @@ async function runOnce(pool: PairPool, minutes: number) {
         gate: { score, byDepth: vsChampion.byDepth },
         vsInitial: vsInitial.avg,
         vsInitialByDepth: vsInitial.byDepth,
+        gateVersion: GATE_VERSION,
       };
       writeJson(CHAMPION, next);
       writeJson(join(DIR, 'champions', `gen-${String(generation).padStart(4, '0')}.json`), next);
