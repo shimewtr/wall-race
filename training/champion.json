@@ -1,26 +1,26 @@
 {
-  "generation": 2,
+  "generation": 3,
   "weights": {
     "pathDiff": 10,
-    "rowDiff": 4.407,
-    "wallDiff": 22.621,
-    "myWalls": 7.614,
-    "urgency": 668.69,
-    "wallsWhenClose": 66.583,
-    "center": 0.694,
-    "adjacent": 3.922,
-    "lockedRace": 2.819
+    "rowDiff": 4.603,
+    "wallDiff": 26.778,
+    "myWalls": 7.271,
+    "urgency": 654.569,
+    "wallsWhenClose": 67.987,
+    "center": -0.248,
+    "adjacent": 2.821,
+    "lockedRace": 6.222
   },
-  "promotedAt": "2026-10-18T06:22:14.465Z",
+  "promotedAt": "2026-10-18T07:19:08.220Z",
   "source": "actions-4",
   "gate": {
-    "score": 0.755,
+    "score": 0.673,
     "byDepth": {
-      "3": 0.755
+      "3": 0.673
     }
   },
-  "vsInitial": 0.708,
+  "vsInitial": 0.688,
   "vsInitialByDepth": {
-    "3": 0.708
+    "3": 0.688
   }
 }
