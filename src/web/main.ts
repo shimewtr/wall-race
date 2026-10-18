@@ -16,7 +16,8 @@ import {
   shortestDistance,
 } from '../engine/game';
 import { type AiRequest, type AiResponse, EVAL_DEPTH } from './ai.worker';
-import { champion } from './champion';
+import { calibration, champion } from './champion';
+import { winRate } from '../train/calibrate';
 
 type Mode = 'human-ai' | 'ai-human' | 'human-human' | 'ai-ai';
 
@@ -287,14 +288,22 @@ function renderEval(score: number | null) {
   } else {
     blue = s.turn === 0 ? score : -score;
     const leader = (blue > 0 ? 0 : 1) as Player;
-    const steps = Math.abs(blue) / 10;
     if (Math.abs(blue) > WIN / 2) text = `${playerLabel(leader)}の勝ちを読み切り`;
-    else if (steps < 0.3) text = '互角';
-    else text = `${playerLabel(leader)}が ${steps.toFixed(1)} 歩分有利`;
+    else if (calibration) text = `${playerLabel(0)}の勝率 ${Math.round(blueWinRate(score, s.turn) * 100)}%`;
+    else text = `評価値 ${blue > 0 ? '+' : ''}${Math.round(blue)}（${PLAYER_NAMES[0]}から見て）`;
   }
-  const pct = Math.abs(blue) > WIN / 2 ? (blue > 0 ? 100 : 0) : 50 + 50 * Math.tanh(blue / 10 / 4);
+  let pct: number;
+  if (Math.abs(blue) > WIN / 2) pct = blue > 0 ? 100 : 0;
+  else if (calibration && score !== null) pct = blueWinRate(score, s.turn) * 100;
+  else pct = 50 + 50 * Math.tanh(blue / 100);
   $('eval-fill').style.width = `${pct}%`;
   $('eval-text').textContent = text;
+}
+
+// 手番側から見た評価値 → 青の勝率
+function blueWinRate(score: number, turn: Player): number {
+  const mover = winRate(score, calibration!);
+  return turn === 0 ? mover : 1 - mover;
 }
 
 function renderBreakdown(s: GameState) {
@@ -337,7 +346,9 @@ function statusText(s: GameState): string {
   link.href = `https://github.com/shimewtr/wall-race/commit/${__APP_COMMIT__}`;
   link.textContent = `v${__APP_COMMIT__.slice(0, 7)}`;
   $('ai-gen').replaceChildren(`${ai} · `, link, `（${built}）`);
-  $('eval-note').textContent = `${champion ? `第 ${champion.generation} 世代` : '初期設定'}の AI が ${EVAL_DEPTH} 手読みで判断した形勢。1 歩 = 10 点として「何歩分の差か」で表示`;
+  $('eval-note').textContent = calibration
+    ? `第 ${calibration.generation} 世代の AI が ${EVAL_DEPTH} 手読みで判断した形勢を、同じ AI の自己対戦の勝ち負けから勝率に換算したもの`
+    : `${champion ? `第 ${champion.generation} 世代` : '初期設定'}の AI が ${EVAL_DEPTH} 手読みで判断した評価値（勝率への換算式はまだ無い）`;
 }
 
 $('new-game').addEventListener('click', newGame);

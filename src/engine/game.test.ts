@@ -16,7 +16,9 @@ import {
   pawnMoves,
   shortestDistance,
 } from './game';
-import { candidateWalls, features, maxDetour, recentCells, search } from './ai';
+import { WIN, candidateWalls, features, maxDetour, recentCells, search } from './ai';
+import { fitCalibration, winRate } from '../train/calibrate';
+import type { MoveRecord } from '../train/record';
 import { rngFrom } from '../train/match';
 import { guideMove } from '../guide/policy';
 
@@ -372,5 +374,28 @@ describe('特徴量 wallThreat', () => {
     const s = initialState();
     s.wallsLeft[0] = 0;
     expect(features(s, undefined, undefined, false).wallThreat).toBe(0);
+  });
+});
+
+describe('評価値 → 勝率の換算', () => {
+  it('評価値が高いほど勝つデータなら、高い評価値ほど勝率が高くなる', () => {
+    const rng = rngFrom(7);
+    // 真の関係: P(勝ち) = σ(0.02 × 評価値 + 0.3)
+    const records = Array.from({ length: 400 }, () => {
+      const moves = Array.from({ length: 20 }, (_, i) => {
+        const score = (rng() - 0.5) * 400;
+        return { ply: i, player: (i % 2) as 0 | 1, score } as MoveRecord;
+      });
+      // 局ごとに 1 手だけ使う形にして、勝者をその手の評価値から決める
+      const m = moves[0];
+      const won = rng() < 1 / (1 + Math.exp(-(0.02 * m.score + 0.3)));
+      return { winner: (won ? m.player : 1 - m.player) as 0 | 1, moves: [m] };
+    });
+    const cal = fitCalibration(records, 1);
+    expect(cal.a).toBeGreaterThan(0.01);
+    expect(cal.a).toBeLessThan(0.03);
+    expect(winRate(100, cal)).toBeGreaterThan(winRate(0, cal));
+    expect(winRate(WIN - 3, cal)).toBe(1);
+    expect(winRate(-WIN + 3, cal)).toBe(0);
   });
 });

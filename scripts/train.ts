@@ -19,7 +19,8 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { FEATURE_NAMES, type Feature, type Weights, withDefaults } from '../src/engine/ai';
 import { OPENING_PLIES, OPENING_TOP } from '../src/train/match';
-import { PairPool } from './lib/pool';
+import { fitCalibration } from '../src/train/calibrate';
+import { PairPool, RecordPool } from './lib/pool';
 
 const { values: args } = parseArgs({
   options: {
@@ -64,6 +65,9 @@ const DIR = join(import.meta.dirname, '..', 'training');
 const STATE = join(DIR, 'state.json');
 const CHAMPION = join(DIR, 'champion.json');
 const HISTORY = join(DIR, 'history.jsonl');
+const CALIBRATION = join(DIR, 'calibration.json');
+// 昇格したときに、評価値を勝率に換算する式を作り直すための自己対戦の局数
+const CALIBRATION_GAMES = 200;
 
 interface State {
   iteration: number;
@@ -233,6 +237,21 @@ const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 const fmtMatch = (m: MatchResult) =>
   `${pct(m.avg)}（${Object.entries(m.byDepth).map(([d, v]) => `${d}手読み ${pct(v)}`).join(' / ')}）`;
 
+// 新しいチャンピオンの評価値を勝率に換算する式（Web の形勢表示で使う）
+async function calibrate(weights: Weights, generation: number) {
+  const records = new RecordPool(pool.size);
+  try {
+    const games = await records.runAll(
+      Array.from({ length: CALIBRATION_GAMES }, (_, i) => ({ weights, depth: DEPTH, seed: 31_000_000 + i })),
+    );
+    const cal = fitCalibration(games, generation);
+    console.log(`  勝率への換算式: a=${cal.a.toPrecision(4)} b=${cal.b.toFixed(3)}`);
+    return cal;
+  } finally {
+    await records.close();
+  }
+}
+
 const fmt = (w: Weights) => TUNED.map((k) => `${k}=${w[k].toFixed(2)}`).join(' ');
 
 async function runOnce(pool: PairPool, minutes: number) {
@@ -311,6 +330,7 @@ async function runOnce(pool: PairPool, minutes: number) {
       };
       writeJson(CHAMPION, next);
       writeJson(join(DIR, 'champions', `gen-${String(generation).padStart(4, '0')}.json`), next);
+      writeJson(CALIBRATION, await calibrate(next.weights, generation));
     }
     appendFileSync(
       HISTORY,
