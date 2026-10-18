@@ -28,12 +28,16 @@ const { values: args } = parseArgs({
     loop: { type: 'boolean', default: false },
     sync: { type: 'boolean', default: true },
     'no-sync': { type: 'boolean', default: false },
+    // 判定（チャンピオン・初期の重みとの対戦）をせず、学習した差分を足し込むだけにする。
+    // 並列で回すときは判定役を 1 台に絞り、残りは学習に専念させる
+    'no-gate': { type: 'boolean', default: false },
     source: { type: 'string' },
     threads: { type: 'string' },
   },
 });
 
 const SYNC = args.sync && !args['no-sync'];
+const GATE = !args['no-gate'];
 // 公開リポジトリに残るので、マシン名などは入れず汎用的なラベルにする
 const SOURCE = args.source ?? (process.env.GITHUB_ACTIONS ? 'actions' : 'mac');
 
@@ -260,7 +264,7 @@ async function runOnce(pool: PairPool, minutes: number) {
   // 換算式がチャンピオンの世代と合っていなければ（昇格が換算式を作る前のコードだった場合など）作り直す
   const champ = loadChampion();
   const cal = existsSync(CALIBRATION) ? readJson<{ generation: number }>(CALIBRATION) : null;
-  if (champ.generation > 0 && cal?.generation !== champ.generation) {
+  if (GATE && champ.generation > 0 && cal?.generation !== champ.generation) {
     writeJson(CALIBRATION, await calibrate(champ.weights, champ.generation));
     commitAndPush(`train: 第 ${champ.generation} 世代の勝率換算式を作成（${SOURCE}）`);
   }
@@ -295,29 +299,35 @@ async function runOnce(pool: PairPool, minutes: number) {
     };
 
     const champion = loadChampion();
-    // 判定の条件が変わっていたら、チャンピオンの対初期勝率を今の条件で測り直す
-    if (champion.gateVersion !== GATE_VERSION) {
-      champion.gateVersion = GATE_VERSION;
-      const m = await gate(pool, champion.weights, withDefaults());
-      champion.vsInitial = m.avg;
-      champion.vsInitialByDepth = m.byDepth;
-      if (champion.generation > 0) writeJson(CHAMPION, champion);
-    }
-    const vsChampion = await gate(pool, state.theta, champion.weights);
-    const vsInitial = await gate(pool, state.theta, withDefaults());
-    const score = vsChampion.avg;
-    const promoted =
-      score >= GATE_THRESHOLD &&
-      Math.min(...Object.values(vsChampion.byDepth)) >= GATE_FLOOR &&
-      vsInitial.avg >= (champion.vsInitial ?? 0.5) - INITIAL_TOLERANCE;
-    console.log(`  対チャンピオン（第 ${champion.generation} 世代）${fmtMatch(vsChampion)}`);
-    console.log(`  対初期の重み ${fmtMatch(vsInitial)}（チャンピオンは ${pct(champion.vsInitial ?? 0.5)}）${promoted ? ' → 昇格' : ''}`);
+    let vsChampion: MatchResult | null = null;
+    let vsInitial: MatchResult | null = null;
+    let promoted = false;
+    let reset = false;
+    if (GATE) {
+      // 判定の条件が変わっていたら、チャンピオンの対初期勝率を今の条件で測り直す
+      if (champion.gateVersion !== GATE_VERSION) {
+        champion.gateVersion = GATE_VERSION;
+        const m = await gate(pool, champion.weights, withDefaults());
+        champion.vsInitial = m.avg;
+        champion.vsInitialByDepth = m.byDepth;
+        if (champion.generation > 0) writeJson(CHAMPION, champion);
+      }
+      vsChampion = await gate(pool, state.theta, champion.weights);
+      vsInitial = await gate(pool, state.theta, withDefaults());
+      const score = vsChampion.avg;
+      promoted =
+        score >= GATE_THRESHOLD &&
+        Math.min(...Object.values(vsChampion.byDepth)) >= GATE_FLOOR &&
+        vsInitial.avg >= (champion.vsInitial ?? 0.5) - INITIAL_TOLERANCE;
+      console.log(`  対チャンピオン（第 ${champion.generation} 世代）${fmtMatch(vsChampion)}`);
+      console.log(`  対初期の重み ${fmtMatch(vsInitial)}（チャンピオンは ${pct(champion.vsInitial ?? 0.5)}）${promoted ? ' → 昇格' : ''}`);
 
-    const reset = !promoted && score < RESET_BELOW;
-    if (reset) {
-      console.log('  チャンピオンに大きく負け越したので、チャンピオンの重みから学習し直します');
-      state.theta = champion.weights;
-      state.stepIteration = 0;
+      reset = !promoted && score < RESET_BELOW;
+      if (reset) {
+        console.log('  チャンピオンに大きく負け越したので、チャンピオンの重みから学習し直します');
+        state.theta = champion.weights;
+        state.stepIteration = 0;
+      }
     }
 
     mkdirSync(join(DIR, 'champions'), { recursive: true });
@@ -330,9 +340,9 @@ async function runOnce(pool: PairPool, minutes: number) {
         weights: state.theta,
         promotedAt: state.updatedAt,
         source: SOURCE,
-        gate: { score, byDepth: vsChampion.byDepth },
-        vsInitial: vsInitial.avg,
-        vsInitialByDepth: vsInitial.byDepth,
+        gate: { score: vsChampion!.avg, byDepth: vsChampion!.byDepth },
+        vsInitial: vsInitial!.avg,
+        vsInitialByDepth: vsInitial!.byDepth,
         gateVersion: GATE_VERSION,
       };
       writeJson(CHAMPION, next);
@@ -348,10 +358,10 @@ async function runOnce(pool: PairPool, minutes: number) {
         iterations: iters,
         totalIterations: state.iteration,
         theta: state.theta,
-        gateScore: score,
-        gateByDepth: vsChampion.byDepth,
-        vsInitial: vsInitial.avg,
-        vsInitialByDepth: vsInitial.byDepth,
+        gateScore: vsChampion?.avg,
+        gateByDepth: vsChampion?.byDepth,
+        vsInitial: vsInitial?.avg,
+        vsInitialByDepth: vsInitial?.byDepth,
         championGeneration: generation,
         promoted,
         reset,
@@ -359,7 +369,7 @@ async function runOnce(pool: PairPool, minutes: number) {
     );
 
     const msg = promoted
-      ? `train: 第 ${generation} 世代に昇格（${SOURCE}, 勝率 ${(score * 100).toFixed(1)}%）`
+      ? `train: 第 ${generation} 世代に昇格（${SOURCE}, 勝率 ${(vsChampion!.avg * 100).toFixed(1)}%）`
       : `train: +${iters} iterations（${SOURCE}, 累計 ${state.iteration}）`;
     if (commitAndPush(msg)) {
       console.log(`[${SOURCE}] ${SYNC ? 'push 完了' : '保存完了（同期なし）'}: ${msg}`);
