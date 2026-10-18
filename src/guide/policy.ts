@@ -42,10 +42,12 @@ export const GUIDE_V1: GuideParams = {
 
 export const GUIDE_V2: GuideParams = { ...GUIDE_V1, lookahead: 1 };
 export const GUIDE_V3: GuideParams = { ...GUIDE_V1, lookahead: 2 };
-// docs/guide.md に書いている手順（第 2 版）。
-// 壁の枚数を歩数に換算して形勢に足す版（wallValue）も試したが、序盤をばらけさせた 400 局の比較で
-// 1 歩以上に数えると強い相手に勝率が 51% → 37〜38% に下がったので採用していない
-export const GUIDE_CURRENT: GuideParams = GUIDE_V2;
+// docs/guide.md に書いている手順（第 4 版 = 第 2 版 + 返しのあとの「壁 1 枚で遠回りさせられる歩数」の差の半分）。
+// - 壁の枚数を歩数に換算して形勢に足す版（wallValue）は、強い相手への勝率が下がったので採用していない
+// - 遠回りの差の倍率は 0.25〜0.5 で第 4 世代の 3 手読みへの勝率が 18% → 32〜36% に上がった（差は誤差程度）。
+//   人間が計算しやすい「半分」にしている
+export const GUIDE_V4: GuideParams = { ...GUIDE_V2, threatValue: 0.5 };
+export const GUIDE_CURRENT: GuideParams = GUIDE_V4;
 
 // 手番側から見た歩数の差（0 以上なら手番側が先着）
 const lead = (s: GameState) => shortestDistance(s, (1 - s.turn) as Player) - shortestDistance(s, s.turn);
