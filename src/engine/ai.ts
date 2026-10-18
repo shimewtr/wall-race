@@ -109,6 +109,8 @@ class Timeout extends Error {}
 // キーに含めない（含めると自分のコマが動くたびに計算し直しになる）。
 // キーは 32 ビットのハッシュなので衝突はありうるが、評価の一項目の近似なので許容する
 const detourCache = new Map<number, number>();
+// 計測用（profile 実験で使う）
+export const detourStats = { calls: 0, misses: 0 };
 const DETOUR_CACHE_LIMIT = 500_000;
 
 function detourKey(s: GameState, attacker: Player): number {
@@ -124,9 +126,11 @@ function detourKey(s: GameState, attacker: Player): number {
 // attacker が壁 1 枚で相手（victim）の最短歩数を最大何歩伸ばせるか。壁が尽きていれば 0
 export function maxDetour(s: GameState, attacker: Player, victimDist?: number): number {
   if (s.wallsLeft[attacker] <= 0) return 0;
+  detourStats.calls++;
   const key = detourKey(s, attacker);
   const cached = detourCache.get(key);
   if (cached !== undefined) return cached;
+  detourStats.misses++;
   const result = computeMaxDetour(s, attacker, victimDist ?? shortestDistance(s, (1 - attacker) as Player));
   if (detourCache.size >= DETOUR_CACHE_LIMIT) detourCache.clear();
   detourCache.set(key, result);

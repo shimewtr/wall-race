@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { Session } from 'node:inspector/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { search, withDefaults } from '../../src/engine/ai';
+import { detourStats, search, withDefaults } from '../../src/engine/ai';
 import { type GameState, applyMove, initialState, isOver } from '../../src/engine/game';
 import { rngFrom } from '../../src/train/match';
 
@@ -49,6 +49,7 @@ for (const n of profile.nodes) {
   self.set(key, (self.get(key) ?? 0) + (hits.get(n.id) ?? 0));
 }
 const sum = [...self.values()].reduce((a, b) => a + b, 0);
+console.log(`maxDetour: ${detourStats.calls} 回呼ばれ、キャッシュに無く計算したのは ${detourStats.misses} 回（当たり率 ${((1 - detourStats.misses / detourStats.calls) * 100).toFixed(1)}%）`);
 console.log(`${sample.length} 局面を ${args.depth} 手読み: 合計 ${total.toFixed(0)}ms\n`);
 console.log('自己時間の多い関数:');
 for (const [k, v] of [...self].sort((a, b) => b[1] - a[1]).slice(0, 20)) {
