@@ -27,6 +27,8 @@ export interface GuideParams {
   saveWallsWhileOpponentFarther: number;
   // 相手の応手を何段階まで想定するか。0 = 第 1 版、1 = 第 2 版、2 = 第 3 版
   lookahead?: number;
+  // 形勢を比べるとき、残り壁 1 枚の差を何歩分と数えるか（0 なら歩数の差だけで比べる）
+  wallValue?: number;
 }
 
 export const GUIDE_V1: GuideParams = {
@@ -66,8 +68,8 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number): Move {
       if (reply.winner !== null) {
         score = -Infinity;
       } else {
-        // 自分の手番に戻ったときの歩数の差。壁の残り枚数をわずかに加味して、同点なら温存を選ぶ
-        score = lead(reply) + 0.01 * (reply.wallsLeft[me] - reply.wallsLeft[1 - me]);
+        // 自分の手番に戻ったときの歩数の差 ＋ 残り壁の差。wallValue が 0 でも同点なら壁を温存する手を選ぶ
+        score = lead(reply) + ((params.wallValue ?? 0) + 0.01) * (reply.wallsLeft[me] - reply.wallsLeft[1 - me]);
       }
     }
     if (score > bestScore) {

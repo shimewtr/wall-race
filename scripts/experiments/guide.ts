@@ -28,6 +28,9 @@ const variants: Array<[string, GuideParams]> = [
   ['手引き初版', GUIDE_V1],
   ['第 2 版（相手の最善の邪魔を 1 手想定）', GUIDE_V2],
   ['第 3 版（相手も第 2 版で考えると想定）', GUIDE_V3],
+  ['第 2 版 + 壁 1 枚 = 1 歩で形勢を数える', { ...GUIDE_V2, wallValue: 1 }],
+  ['第 2 版 + 壁 1 枚 = 2 歩で形勢を数える', { ...GUIDE_V2, wallValue: 2 }],
+  ['第 2 版 + 壁 1 枚 = 3 歩で形勢を数える', { ...GUIDE_V2, wallValue: 3 }],
   ...args.variant!.map((v): [string, GuideParams] => [v, { ...GUIDE_V1, ...JSON.parse(v) }]),
 ];
 
