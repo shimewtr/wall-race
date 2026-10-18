@@ -1,27 +1,26 @@
 {
-  "generation": 1,
+  "generation": 2,
   "weights": {
     "pathDiff": 10,
-    "rowDiff": -1.314,
-    "wallDiff": 12.483,
-    "myWalls": 12.191,
-    "urgency": 665.637,
-    "wallsWhenClose": 68.866,
-    "center": -0.558,
-    "adjacent": 2.985,
-    "lockedRace": 0
+    "rowDiff": 4.407,
+    "wallDiff": 22.621,
+    "myWalls": 7.614,
+    "urgency": 668.69,
+    "wallsWhenClose": 66.583,
+    "center": 0.694,
+    "adjacent": 3.922,
+    "lockedRace": 2.819
   },
-  "promotedAt": "2026-10-18T01:52:10.692Z",
-  "source": "mac",
+  "promotedAt": "2026-10-18T06:22:14.465Z",
+  "source": "actions-4",
   "gate": {
-    "score": 0.568,
-    "pairs": 200,
-    "depth": 3
+    "score": 0.755,
+    "byDepth": {
+      "3": 0.755
+    }
   },
-  "vsInitial": 0.608,
+  "vsInitial": 0.708,
   "vsInitialByDepth": {
-    "2": 0.495,
-    "3": 0.605,
-    "4": 0.725
+    "3": 0.708
   }
 }
