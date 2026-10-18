@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { withDefaults } from '../../src/engine/ai';
 import type { GuideJob } from '../../src/guide/match';
-import { GUIDE_V1, type GuideParams } from '../../src/guide/policy';
+import { GUIDE_V1, GUIDE_V2, type GuideParams } from '../../src/guide/policy';
 import { GuidePool } from '../lib/pool';
 
 const { values: args } = parseArgs({
@@ -30,6 +30,9 @@ const variants: Array<[string, GuideParams]> = [
   ['壁は 2 歩以上の得のときだけ', { ...GUIDE_V1, minNetGain: 2 }],
   ['相手があと 6 歩になるまで壁を温存', { ...GUIDE_V1, saveWallsWhileOpponentFarther: 6 }],
   ['リード 1 歩以下で相手があと 3 歩なら壁で突き放す', { ...GUIDE_V1, defendLead: 1, holdUntil: 3 }],
+  ['第 2 版（相手の最善の邪魔を 1 手想定）', GUIDE_V2],
+  ['第 2 版 + 相手があと 3 歩になるまで壁を温存', { ...GUIDE_V2, saveWallsWhileOpponentFarther: 3 }],
+  ['第 2 版 + 相手があと 5 歩になるまで壁を温存', { ...GUIDE_V2, saveWallsWhileOpponentFarther: 5 }],
   ...args.variant!.map((v): [string, GuideParams] => [v, { ...GUIDE_V1, ...JSON.parse(v) }]),
 ];
 

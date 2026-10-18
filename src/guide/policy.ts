@@ -8,6 +8,10 @@
 //      「相手が遠回りになる歩数 − 自分が遠回りになる歩数」がいちばん大きいもの
 //   4. その差が minNetGain 歩に満たなければ、壁は置かずに前進する
 //   5. 前進は自分の最短ルートに沿って 1 歩。同じなら盤の中央寄りを選ぶ
+//
+// 第 2 版（lookahead）: 1〜5 の代わりに、候補の手（前進と、相手の最短ルートをふさぐ壁）それぞれについて
+//   「その手のあと、相手が 1〜5 のやり方で最善の邪魔（または前進）をしてきたら、歩数の差はどうなるか」
+//   を確かめ、差がいちばん良くなる手を選ぶ。同じなら壁を温存できる前進を選ぶ。
 
 import { candidateWalls } from '../engine/ai';
 import { type GameState, type Move, type Player, applyMove, pawnMoves, shortestDistance } from '../engine/game';
@@ -20,6 +24,8 @@ export interface GuideParams {
   holdUntil: number;
   // 相手の残り歩数がこれより多いうちは、負けていても壁を温存する（序盤に使い切らない）
   saveWallsWhileOpponentFarther: number;
+  // 相手の最善の応手を 1 手だけ想定して手を選ぶ（第 2 版）
+  lookahead?: boolean;
 }
 
 export const GUIDE_V1: GuideParams = {
@@ -29,7 +35,48 @@ export const GUIDE_V1: GuideParams = {
   saveWallsWhileOpponentFarther: 99,
 };
 
+export const GUIDE_V2: GuideParams = { ...GUIDE_V1, lookahead: true };
+
+// 手番側から見た歩数の差（0 以上なら手番側が先着）
+const lead = (s: GameState) => shortestDistance(s, (1 - s.turn) as Player) - shortestDistance(s, s.turn);
+
 export function guideMove(s: GameState, params: GuideParams = GUIDE_V1): Move {
+  if (params.lookahead) return lookaheadMove(s, params);
+  return simpleMove(s, params);
+}
+
+function lookaheadMove(s: GameState, params: GuideParams): Move {
+  const me = s.turn;
+  const op = (1 - me) as Player;
+  // 相手がまだ遠いうちは壁を候補に入れない（温存）
+  const walls = shortestDistance(s, op) <= params.saveWallsWhileOpponentFarther ? candidateWalls(s) : [];
+  const candidates: Move[] = [...pawnMoves(s).map((p): Move => ({ type: 'pawn', x: p.x, y: p.y })), ...walls];
+  let best = candidates[0];
+  let bestScore = -Infinity;
+  for (const m of candidates) {
+    const after = applyMove(s, m);
+    let score: number;
+    if (after.winner === me) {
+      score = Infinity;
+    } else {
+      // 相手は第 1 版のやり方で最善の手を返してくる、と想定する
+      const reply = applyMove(after, simpleMove(after, { ...params, lookahead: false }));
+      if (reply.winner !== null) {
+        score = -Infinity;
+      } else {
+        // 自分の手番に戻ったときの歩数の差。壁の残り枚数をわずかに加味して、同点なら温存を選ぶ
+        score = lead(reply) + 0.01 * (reply.wallsLeft[me] - reply.wallsLeft[1 - me]);
+      }
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = m;
+    }
+  }
+  return best;
+}
+
+function simpleMove(s: GameState, params: GuideParams): Move {
   const me = s.turn;
   const op = (1 - me) as Player;
   const myDist = shortestDistance(s, me);
