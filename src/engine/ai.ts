@@ -102,7 +102,9 @@ export const WIN = 100000;
 
 class Timeout extends Error {}
 
-// maxDetour の結果のキャッシュ。読みの途中では「壁の配置と 2 つのコマの位置」が同じ局面が何度も出てくる。
+// maxDetour の結果のキャッシュ。読みの途中では「壁の配置と相手のコマの位置」が同じ局面が何度も出てくる。
+// 壁を置く側のコマの位置は「自分の道までふさぐ壁は置けない」の判定にしか効かず、結果が変わることはまれなので
+// キーに含めない（含めると自分のコマが動くたびに計算し直しになる）。
 // キーは 32 ビットのハッシュなので衝突はありうるが、評価の一項目の近似なので許容する
 const detourCache = new Map<number, number>();
 const DETOUR_CACHE_LIMIT = 500_000;
@@ -114,8 +116,7 @@ function detourKey(s: GameState, attacker: Player): number {
     if (s.vWalls[i]) h = Math.imul(h ^ (i + 101), 0x01000193);
   }
   const v = s.pawns[1 - attacker];
-  const a = s.pawns[attacker];
-  return Math.imul(h ^ (attacker * 6561 + (v.y * 9 + v.x) * 81 + a.y * 9 + a.x), 0x01000193) >>> 0;
+  return Math.imul(h ^ (attacker * 81 + v.y * 9 + v.x), 0x01000193) >>> 0;
 }
 
 // attacker が壁 1 枚で相手（victim）の最短歩数を最大何歩伸ばせるか。壁が尽きていれば 0
