@@ -327,3 +327,30 @@ describe('高速化した処理が元の処理と一致する', () => {
     }
   });
 });
+
+describe('序盤のばらけさせ方（pickFromTop）', () => {
+  it('上位 3 手からランダムに選ぶので、乱数によって違う手になる', () => {
+    const picked = new Set(
+      Array.from({ length: 30 }, (_, i) => moveToString(search(initialState(), { maxDepth: 2, pickFromTop: 3, rng: rngFrom(i + 1) }).move)),
+    );
+    expect(picked.size).toBeGreaterThan(1);
+    expect(picked.size).toBeLessThanOrEqual(3);
+  });
+
+  it('自己対戦の序盤がばらける', () => {
+    const openings = new Set(
+      Array.from({ length: 10 }, (_, i) => {
+        let s = initialState();
+        const rng = rngFrom(100 + i);
+        const moves: string[] = [];
+        for (let ply = 0; ply < 6; ply++) {
+          const m = search(s, { maxDepth: 1, pickFromTop: 3, rng }).move;
+          moves.push(moveToString(m));
+          s = applyMove(s, m);
+        }
+        return moves.join(' ');
+      }),
+    );
+    expect(openings.size).toBeGreaterThan(5);
+  });
+});

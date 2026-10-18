@@ -18,7 +18,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, write
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { FEATURE_NAMES, type Feature, type Weights, withDefaults } from '../src/engine/ai';
-import { OPENING_PLIES } from '../src/train/match';
+import { OPENING_PLIES, OPENING_TOP } from '../src/train/match';
 import { PairPool } from './lib/pool';
 
 const { values: args } = parseArgs({
@@ -46,7 +46,7 @@ const PAIRS_PER_ITER = 16;
 // 判定に使う読みの深さと対局数（深さごとに測って平均する）
 const GATE_SUITE: Record<number, number> = { [DEPTH]: 200 };
 // 判定条件の識別子（深さ・対局数・序盤のばらけさせ方）
-const GATE_VERSION = `${Object.entries(GATE_SUITE).map(([d, n]) => `d${d}x${n}`).join('-')}-o${OPENING_PLIES}`;
+const GATE_VERSION = `${Object.entries(GATE_SUITE).map(([d, n]) => `d${d}x${n}`).join('-')}-o${OPENING_PLIES}t${OPENING_TOP}`;
 // 昇格条件: 平均勝率が GATE_THRESHOLD 以上、どの深さでも GATE_FLOOR 以上、初期の重みへの勝率が下がっていない
 const GATE_FLOOR = 0.42;
 const INITIAL_TOLERANCE = 0.03;

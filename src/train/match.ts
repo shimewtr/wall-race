@@ -9,21 +9,21 @@ export interface MatchConfig {
   depth: number;
   // 最善手から margin 点以内の手からランダムに選ぶ（同じ棋譜の繰り返しを避ける）
   margin: number;
-  // 序盤のこの手数だけは、最善から OPENING_MARGIN 点以内の手からランダムに選ぶ（展開をばらけさせる）
+  // 序盤のこの手数だけは、評価の上位 OPENING_TOP 手からランダムに選ぶ（展開をばらけさせる）
   openingPlies: number;
   seed: number;
   // 先手・後手それぞれの追加の探索オプション（実験で探索方法を比べる用）
   options?: [Partial<SearchOptions>, Partial<SearchOptions>];
 }
 
-// 序盤にばらけさせる手数と幅（1 歩 = 10 点。最善から 1 歩分以内の手なら選ぶ）。
-// これが無いと自己対戦の序盤が毎回同じになり、統計や勝率が特定の展開に偏る
+// 序盤にばらけさせる手数と、そのあいだ選ぶ候補の数（評価の上位 OPENING_TOP 手からランダム）。
+// これが無いと自己対戦の序盤が毎回同じになり、統計や勝率が特定の展開に偏る。
+// 「最善から N 点以内」で選ぶ方式は、序盤は前進と他の手の差が大きく、結局毎回同じ手になったので使わない
 export const OPENING_PLIES = 6;
-export const OPENING_MARGIN = 10;
+export const OPENING_TOP = 3;
 
-// その手数での選び方の幅
-export const marginAt = (ply: number, margin: number, openingPlies: number) =>
-  ply < openingPlies ? Math.max(margin, OPENING_MARGIN) : margin;
+// その手数で上位何手から選ぶか
+export const pickAt = (ply: number, openingPlies: number) => (ply < openingPlies ? OPENING_TOP : 1);
 
 // 再現性のための軽量な乱数（mulberry32）
 export function rngFrom(seed: number): () => number {
@@ -47,7 +47,8 @@ export function playMatch(cfg: MatchConfig): Player | null {
       ...cfg.options?.[s.turn],
       maxDepth: cfg.depth,
       weights: cfg.weights[s.turn],
-      margin: marginAt(s.ply, cfg.margin, cfg.openingPlies),
+      margin: cfg.margin,
+      pickFromTop: pickAt(s.ply, cfg.openingPlies),
       rng,
       recent: recentCells(history, s.turn),
     });

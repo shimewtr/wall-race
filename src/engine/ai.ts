@@ -70,6 +70,8 @@ export interface SearchOptions {
   repeatPenalty?: number;
   // いま指す手の候補に、守りの壁やコマ周りの壁も含める（読みの途中は相手の経路をふさぐ壁だけ）
   wideRoot?: boolean;
+  // 評価の上位この数の手からランダムに選ぶ（自己対戦の序盤をばらけさせる用）。2 以上なら margin より優先
+  pickFromTop?: number;
 }
 
 export const REPEAT_PENALTY = 8;
@@ -255,6 +257,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
   const rng = opts.rng ?? Math.random;
   const noise = opts.noise ?? 0;
   const margin = opts.margin ?? 0;
+  const pickFromTop = opts.pickFromTop ?? 1;
   const deadline = opts.timeMs ? Date.now() + opts.timeMs : Infinity;
   let nodes = 0;
 
@@ -308,10 +311,12 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
       const scored: Array<{ c: Candidate; v: number }> = [];
       for (const c of rootMoves) {
         const [cm, co] = childDistances(c, rootMy, rootOp);
-        // 最善手から margin 以内の手も正確な値が出るよう、窓を margin 分広げて読む
+        // 最善手から margin 以内の手も正確な値が出るよう、窓を margin 分広げて読む。
+        // 上位から選ぶときはすべての手の正確な値が要るので、根では枝刈りしない
+        const floor = pickFromTop > 1 ? -Infinity : alpha - margin;
         const undo = makeMove(work, c.m);
         const v =
-          -negamax(work, depth - 1, -Infinity, -(alpha - margin), 1, cm, co) -
+          -negamax(work, depth - 1, -Infinity, -floor, 1, cm, co) -
           penalty(c.m) +
           (noise ? (rng() - 0.5) * noise : 0);
         unmakeMove(work, c.m, undo);
@@ -322,7 +327,10 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
         }
         if (v > alpha) alpha = v;
       }
-      if (margin > 0) {
+      if (pickFromTop > 1) {
+        const top = [...scored].sort((a, b) => b.v - a.v).slice(0, pickFromTop);
+        bestMove = top[Math.floor(rng() * top.length)].c.m;
+      } else if (margin > 0) {
         const near = scored.filter((x) => x.v >= bestScore - margin);
         bestMove = near[Math.floor(rng() * near.length)].c.m;
       }
