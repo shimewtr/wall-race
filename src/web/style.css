@@ -164,12 +164,15 @@ body {
   pointer-events: none;
 }
 
-.wall.owner-0 {
-  background: color-mix(in srgb, var(--wall) 55%, var(--p0));
+/* 壁の木の色に置いた人の色を混ぜる。青は木の色と混ぜると灰色に寄るので多めに混ぜる */
+.wall.owner-0,
+#bar-0 .pip {
+  background: color-mix(in srgb, var(--wall) 35%, var(--p0));
 }
 
-.wall.owner-1 {
-  background: color-mix(in srgb, var(--wall) 55%, var(--p1));
+.wall.owner-1,
+#bar-1 .pip {
+  background: color-mix(in srgb, var(--wall) 50%, var(--p1));
 }
 
 .wall.preview {
@@ -222,14 +225,6 @@ body {
   height: 16px;
   border-radius: 2px;
   background: var(--wall);
-}
-
-#bar-0 .pip {
-  background: color-mix(in srgb, var(--wall) 55%, var(--p0));
-}
-
-#bar-1 .pip {
-  background: color-mix(in srgb, var(--wall) 55%, var(--p1));
 }
 
 .pip.used {
