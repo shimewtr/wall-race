@@ -14,7 +14,7 @@
 //   npm run train -- --minutes 5 --no-sync  # git 操作をせず手元だけで試す
 
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { FEATURE_NAMES, type Feature, type Weights, withDefaults } from '../src/engine/ai';
@@ -36,14 +36,22 @@ const SYNC = args.sync && !args['no-sync'];
 const SOURCE = args.source ?? (process.env.GITHUB_ACTIONS ? 'actions' : 'mac');
 
 // ---- ハイパーパラメータ ----
-const TRAIN_DEPTH = 2;
+// 学習の対局は基本 2 手読み、一部を 3 手読みにして、浅い読みでだけ効く癖を覚えにくくする
+const trainDepth = () => (Math.random() < 0.3 ? 3 : 2);
 // 最善から 0.1 歩以内の手をランダムに選ぶ。弱い手は選ばずに棋譜の多様性を確保する
 const MARGIN = 1;
 const OPENING_PLIES = 0;
 const PAIRS_PER_ITER = 16;
-const GATE_DEPTH = 3;
-const GATE_PAIRS = 200;
+// 判定は読みの深さごとに対戦して平均する。重みの良し悪しが深さで大きく変わるため（Web の「つよい」は 4 手読み）
+const GATE_SUITE: Record<number, number> = { 2: 100, 3: 100, 4: 40 };
+// 昇格条件: 平均勝率が GATE_THRESHOLD 以上、どの深さでも GATE_FLOOR 以上、初期の重みへの勝率が下がっていない
+const GATE_FLOOR = 0.42;
+const INITIAL_TOLERANCE = 0.03;
 const GATE_THRESHOLD = 0.55;
+// 学習中の重みがチャンピオンにこれ未満しか勝てなければ、チャンピオンの重みから学習し直す
+const RESET_BELOW = 0.47;
+// 対戦相手の選び方: この確率で現チャンピオン、残りは過去の世代（初期の重みを含む）から無作為
+const CHAMPION_RATE = 0.5;
 // pathDiff は「1 歩 = 10 点」という評価の単位として固定し、他の重みをそれに対して調整する
 const FIXED: Feature[] = ['pathDiff'];
 const TUNED = FEATURE_NAMES.filter((f) => !FIXED.includes(f));
@@ -56,6 +64,8 @@ const HISTORY = join(DIR, 'history.jsonl');
 
 interface State {
   iteration: number;
+  // 学習率の減衰に使う反復数（リセットで 0 に戻る）
+  stepIteration?: number;
   pairs: number;
   theta: Weights;
   updatedAt: string;
@@ -67,9 +77,10 @@ interface Champion {
   promotedAt: string;
   source: string;
   // 前のチャンピオンに対する勝率
-  gate: { score: number; pairs: number; depth: number } | null;
+  gate: { score: number; byDepth?: Record<string, number> } | null;
   // 学習前の初期の重みに対する勝率（強くなっているかの物差し）
   vsInitial?: number;
+  vsInitialByDepth?: Record<string, number>;
 }
 
 const readJson = <T>(path: string): T => JSON.parse(readFileSync(path, 'utf8')) as T;
@@ -91,6 +102,17 @@ function loadChampion(): Champion {
     return { ...c, weights: withDefaults(c.weights) };
   }
   return { generation: 0, weights: withDefaults(), promotedAt: new Date().toISOString(), source: 'initial', gate: null };
+}
+
+// 過去のチャンピオン全員（初期の重みを含む）。学習の対戦相手に使う
+function loadLeague(): Weights[] {
+  const dir = join(DIR, 'champions');
+  const past = existsSync(dir)
+    ? readdirSync(dir)
+        .filter((f) => f.endsWith('.json'))
+        .map((f) => withDefaults(readJson<Champion>(join(dir, f)).weights))
+    : [];
+  return [withDefaults(), ...past];
 }
 
 // ---- git ----
@@ -138,12 +160,21 @@ const PERTURB: Record<Feature, number> = {
   wallsWhenClose: 2,
   center: 1,
   adjacent: 2,
+  lockedRace: 5,
 };
 const perturbScale = (_theta: Weights, k: Feature) => PERTURB[k];
-const learningRate = (iteration: number) => 0.5 / (1 + iteration / 5000) ** 0.6;
+const learningRate = (iteration: number) => 2 / (1 + iteration / 5000) ** 0.6;
 const randomSeed = () => Math.floor(Math.random() * 2 ** 31);
 
-async function spsaStep(pool: PairPool, theta: Weights, iteration: number): Promise<Weights> {
+// ＋側と－側を「同じ相手・同じ乱数」で戦わせ、勝率の差で重みを動かす。
+// ＋と－を直接戦わせると、隣の自分にだけ強い方向へ流れる（じゃんけん型の堂々巡り）ので避ける。
+async function spsaStep(
+  pool: PairPool,
+  theta: Weights,
+  stepIteration: number,
+  champion: Weights,
+  league: Weights[],
+): Promise<Weights> {
   const delta = Object.fromEntries(TUNED.map((k) => [k, Math.random() < 0.5 ? -1 : 1])) as Record<Feature, number>;
   const plus = { ...theta };
   const minus = { ...theta };
@@ -151,33 +182,49 @@ async function spsaStep(pool: PairPool, theta: Weights, iteration: number): Prom
     plus[k] += perturbScale(theta, k) * delta[k];
     minus[k] -= perturbScale(theta, k) * delta[k];
   }
-  const scores = await pool.runAll(
-    Array.from({ length: PAIRS_PER_ITER }, () => ({
-      a: plus,
-      b: minus,
-      opts: { depth: TRAIN_DEPTH, margin: MARGIN, openingPlies: OPENING_PLIES, seed: randomSeed() },
-    })),
+  const matches = Array.from({ length: PAIRS_PER_ITER }, () => ({
+    opponent: Math.random() < CHAMPION_RATE ? champion : league[Math.floor(Math.random() * league.length)],
+    opts: { depth: trainDepth(), margin: MARGIN, openingPlies: OPENING_PLIES, seed: randomSeed() },
+  }));
+  const [plusScores, minusScores] = await Promise.all(
+    [plus, minus].map((w) => pool.runAll(matches.map((m) => ({ a: w, b: m.opponent, opts: m.opts })))),
   );
-  // plus 側の勝ち越し具合（-1〜1）
-  const r = scores.reduce((x, y) => x + y, 0) / PAIRS_PER_ITER - 1;
+  const sum = (xs: number[]) => xs.reduce((x, y) => x + y, 0);
+  // ＋側が－側よりどれだけ多く勝ったか（-1〜1）
+  const r = (sum(plusScores) - sum(minusScores)) / (PAIRS_PER_ITER * 2);
   const next = { ...theta };
-  const lr = learningRate(iteration);
+  const lr = learningRate(stepIteration);
   for (const k of TUNED) next[k] += lr * perturbScale(theta, k) * r * delta[k];
   return next;
 }
 
-// a の b に対する勝率（0〜1）
-async function gate(pool: PairPool, a: Weights, b: Weights): Promise<number> {
-  const scores = await pool.runAll(
-    Array.from({ length: GATE_PAIRS }, (_, i) => ({
-      a,
-      b,
-      // 判定用の序盤は固定シードにして、毎回同じ条件で比べる
-      opts: { depth: GATE_DEPTH, margin: MARGIN, openingPlies: OPENING_PLIES, seed: 1_000_000 + i },
-    })),
-  );
-  return scores.reduce((x, y) => x + y, 0) / (GATE_PAIRS * 2);
+interface MatchResult {
+  avg: number;
+  byDepth: Record<string, number>;
 }
+
+// a の b に対する勝率（0〜1）を深さごとに測って平均する
+async function gate(pool: PairPool, a: Weights, b: Weights): Promise<MatchResult> {
+  const byDepth: Record<string, number> = {};
+  for (const [depth, pairs] of Object.entries(GATE_SUITE)) {
+    const scores = await pool.runAll(
+      Array.from({ length: pairs }, (_, i) => ({
+        a,
+        b,
+        // 判定用の序盤は固定シードにして、毎回同じ条件で比べる
+        opts: { depth: Number(depth), margin: MARGIN, openingPlies: OPENING_PLIES, seed: 1_000_000 + i },
+      })),
+    );
+    byDepth[depth] = round3(scores.reduce((x, y) => x + y, 0) / (pairs * 2));
+  }
+  const values = Object.values(byDepth);
+  return { avg: round3(values.reduce((x, y) => x + y, 0) / values.length), byDepth };
+}
+
+const round3 = (x: number) => Math.round(x * 1000) / 1000;
+const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+const fmtMatch = (m: MatchResult) =>
+  `${pct(m.avg)}（${Object.entries(m.byDepth).map(([d, v]) => `${d}手読み ${pct(v)}`).join(' / ')}）`;
 
 const fmt = (w: Weights) => TUNED.map((k) => `${k}=${w[k].toFixed(2)}`).join(' ');
 
@@ -185,6 +232,9 @@ async function runOnce(pool: PairPool, minutes: number) {
   ensureCleanTraining();
   pull();
   const start = loadState();
+  const startStep = start.stepIteration ?? start.iteration;
+  const champion0 = loadChampion().weights;
+  const league = loadLeague();
   let theta = start.theta;
   let iters = 0;
   const deadline = Date.now() + minutes * 60_000;
@@ -192,7 +242,7 @@ async function runOnce(pool: PairPool, minutes: number) {
   console.log(`[${SOURCE}] 開始 iteration=${start.iteration} ${fmt(theta)}`);
 
   while (Date.now() < deadline) {
-    theta = await spsaStep(pool, theta, start.iteration + iters);
+    theta = await spsaStep(pool, theta, startStep + iters, champion0, league);
     iters++;
     if (iters % 100 === 0) console.log(`  +${iters} iters  ${fmt(theta)}`);
   }
@@ -205,17 +255,36 @@ async function runOnce(pool: PairPool, minutes: number) {
     for (const k of TUNED) merged[k] += theta[k] - start.theta[k];
     const state: State = {
       iteration: latest.iteration + iters,
-      pairs: latest.pairs + iters * PAIRS_PER_ITER,
+      stepIteration: (latest.stepIteration ?? latest.iteration) + iters,
+      pairs: latest.pairs + iters * PAIRS_PER_ITER * 2,
       theta: round(merged),
       updatedAt: new Date().toISOString(),
     };
 
     const champion = loadChampion();
-    const score = await gate(pool, state.theta, champion.weights);
-    const promoted = score >= GATE_THRESHOLD;
+    // 古い形式のチャンピオンには深さ別の対初期勝率が無いので、ここで測っておく
+    if (!champion.vsInitialByDepth) {
+      const m = await gate(pool, champion.weights, withDefaults());
+      champion.vsInitial = m.avg;
+      champion.vsInitialByDepth = m.byDepth;
+      if (champion.generation > 0) writeJson(CHAMPION, champion);
+    }
+    const vsChampion = await gate(pool, state.theta, champion.weights);
     const vsInitial = await gate(pool, state.theta, withDefaults());
-    const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
-    console.log(`  チャンピオン（第 ${champion.generation} 世代）に対する勝率 ${pct(score)}${promoted ? ' → 昇格' : ''}、初期の重みに対する勝率 ${pct(vsInitial)}`);
+    const score = vsChampion.avg;
+    const promoted =
+      score >= GATE_THRESHOLD &&
+      Math.min(...Object.values(vsChampion.byDepth)) >= GATE_FLOOR &&
+      vsInitial.avg >= (champion.vsInitial ?? 0.5) - INITIAL_TOLERANCE;
+    console.log(`  対チャンピオン（第 ${champion.generation} 世代）${fmtMatch(vsChampion)}`);
+    console.log(`  対初期の重み ${fmtMatch(vsInitial)}（チャンピオンは ${pct(champion.vsInitial ?? 0.5)}）${promoted ? ' → 昇格' : ''}`);
+
+    const reset = !promoted && score < RESET_BELOW;
+    if (reset) {
+      console.log('  チャンピオンに大きく負け越したので、チャンピオンの重みから学習し直します');
+      state.theta = champion.weights;
+      state.stepIteration = 0;
+    }
 
     mkdirSync(join(DIR, 'champions'), { recursive: true });
     writeJson(STATE, state);
@@ -227,8 +296,9 @@ async function runOnce(pool: PairPool, minutes: number) {
         weights: state.theta,
         promotedAt: state.updatedAt,
         source: SOURCE,
-        gate: { score: Math.round(score * 1000) / 1000, pairs: GATE_PAIRS, depth: GATE_DEPTH },
-        vsInitial: Math.round(vsInitial * 1000) / 1000,
+        gate: { score, byDepth: vsChampion.byDepth },
+        vsInitial: vsInitial.avg,
+        vsInitialByDepth: vsInitial.byDepth,
       };
       writeJson(CHAMPION, next);
       writeJson(join(DIR, 'champions', `gen-${String(generation).padStart(4, '0')}.json`), next);
@@ -242,10 +312,13 @@ async function runOnce(pool: PairPool, minutes: number) {
         iterations: iters,
         totalIterations: state.iteration,
         theta: state.theta,
-        gateScore: Math.round(score * 1000) / 1000,
-        vsInitial: Math.round(vsInitial * 1000) / 1000,
+        gateScore: score,
+        gateByDepth: vsChampion.byDepth,
+        vsInitial: vsInitial.avg,
+        vsInitialByDepth: vsInitial.byDepth,
         championGeneration: generation,
         promoted,
+        reset,
       })}\n`,
     );
 

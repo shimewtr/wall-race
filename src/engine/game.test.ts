@@ -11,7 +11,7 @@ import {
   pawnMoves,
   shortestDistance,
 } from './game';
-import { recentCells, search } from './ai';
+import { features, recentCells, search } from './ai';
 import { rngFrom } from '../train/match';
 
 const sortPos = (ps: { x: number; y: number }[]) =>
@@ -173,5 +173,24 @@ describe('ランダム性（margin）', () => {
       const r = search(s, { maxDepth: 2, margin: 1, rng: rngFrom(i + 1) });
       expect(r.move).toEqual({ type: 'pawn', x: 4, y: 7 });
     }
+  });
+});
+
+describe('特徴量 lockedRace', () => {
+  it('相手の壁が尽きていて自分が先着できるなら +1', () => {
+    const s = initialState();
+    s.wallsLeft[1] = 0;
+    expect(features(s).lockedRace).toBe(1); // 手番の先手は同じ 8 歩なら先に着く
+  });
+
+  it('自分の壁が尽きていて相手が先着できるなら -1', () => {
+    const s = initialState();
+    s.wallsLeft[0] = 0;
+    s.pawns[1] = { x: 4, y: 2 }; // 相手は残り 6 歩、自分は 8 歩
+    expect(features(s).lockedRace).toBe(-1);
+  });
+
+  it('お互い壁が残っていれば 0', () => {
+    expect(features(initialState()).lockedRace).toBe(0);
   });
 });

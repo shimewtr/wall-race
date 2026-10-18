@@ -27,6 +27,7 @@ export const FEATURES = {
   wallsWhenClose: '相手がゴールに近いほど自分の壁に価値（自分の壁/(相手の歩数+1) - 相手の壁/(自分の歩数+1)）',
   center: '中央寄り（相手の中央からの横ずれ - 自分の横ずれ）',
   adjacent: '相手と隣接している（手番側は飛び越えのチャンス）',
+  lockedRace: '壁が尽きて歩数勝負が確定している（相手の壁 0 で自分が先着できる +1、自分の壁 0 で相手が先着できる -1）',
 } as const;
 
 export type Feature = keyof typeof FEATURES;
@@ -42,6 +43,7 @@ export const DEFAULT_WEIGHTS: Weights = {
   wallsWhenClose: 0,
   center: 0,
   adjacent: 0,
+  lockedRace: 0,
 };
 
 // 古い保存データに無い特徴量はデフォルト値で補う
@@ -104,6 +106,9 @@ export function features(s: GameState): Weights {
     wallsWhenClose: s.wallsLeft[me] / (opDist + 1) - s.wallsLeft[op] / (myDist + 1),
     center: Math.abs(o.x - 4) - Math.abs(my.x - 4),
     adjacent: Math.abs(my.x - o.x) + Math.abs(my.y - o.y) === 1 ? 1 : 0,
+    // 手番側は同じ歩数なら先に着く。壁が無ければ相手は邪魔できない
+    lockedRace:
+      (s.wallsLeft[op] === 0 && myDist <= opDist ? 1 : 0) - (s.wallsLeft[me] === 0 && opDist < myDist ? 1 : 0),
   };
 }
 
