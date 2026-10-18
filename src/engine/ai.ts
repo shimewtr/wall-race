@@ -14,7 +14,7 @@ import {
   makeMove,
   unmakeMove,
   goalRow,
-  isLegalWall,
+  wallFits,
   isOver,
   pawnMoves,
   shortestDistance,
@@ -129,6 +129,20 @@ export function evaluate(s: GameState, w: Weights = DEFAULT_WEIGHTS): number {
   return score;
 }
 
+// 壁 (x, y, o) が経路のどこかの一歩をふさぐか
+function cutsPath(path: Pos[], x: number, y: number, o: 'h' | 'v'): boolean {
+  for (let i = 0; i + 1 < path.length; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    if (a.x === b.x) {
+      if (o === 'h' && y === Math.min(a.y, b.y) && (x === a.x || x === a.x - 1)) return true;
+    } else if (o === 'v' && x === Math.min(a.x, b.x) && (y === a.y || y === a.y - 1)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // 探索する壁の候補。
 // 基本は「相手の最短経路の一歩一歩をふさぐ壁」だけ（読みの途中はこれで十分かつ軽い）。
 // wide のときは加えて、
@@ -141,15 +155,30 @@ export function candidateWalls(s: GameState, wide = false): Move[] {
   const op = (1 - me) as Player;
   const path = shortestPath(s, op);
   if (!path) return [];
+  const myPath = shortestPath(s, me);
   const seen = new Set<number>();
   const result: Move[] = [];
+  // 合法判定（isLegalWall と同じ結果）。今の最短経路を横切らない壁ではその人の道はふさがらないので、
+  // 経路を横切るときだけ探索し直す
+  const legal = (x: number, y: number, o: 'h' | 'v') => {
+    if (!wallFits(s, x, y, o)) return false;
+    const cutsOp = cutsPath(path, x, y, o);
+    const cutsMe = myPath !== null && cutsPath(myPath, x, y, o);
+    if (!cutsOp && !cutsMe) return true;
+    const walls = o === 'h' ? s.hWalls : s.vWalls;
+    const i = y * WALL_SLOTS + x;
+    walls[i] = 1;
+    const ok = (!cutsOp || shortestDistance(s, op) >= 0) && (!cutsMe || shortestDistance(s, me) >= 0);
+    walls[i] = 0;
+    return ok;
+  };
   const add = (x: number, y: number, o: 'h' | 'v', keep: (m: Move) => boolean = () => true) => {
     if (x < 0 || y < 0 || x >= WALL_SLOTS || y >= WALL_SLOTS) return;
     const key = (o === 'h' ? 0 : 64) + y * WALL_SLOTS + x;
     if (seen.has(key)) return;
     seen.add(key);
     const m: Move = { type: 'wall', x, y, o };
-    if (isLegalWall(s, x, y, o) && keep(m)) result.push(m);
+    if (legal(x, y, o) && keep(m)) result.push(m);
   };
   // マス (cx, cy) の辺に接する壁のアンカー
   const around = (cx: number, cy: number, keep?: (m: Move) => boolean) => {
@@ -175,7 +204,6 @@ export function candidateWalls(s: GameState, wide = false): Move[] {
   }
   if (!wide) return result;
   for (const p of s.pawns) around(p.x, p.y);
-  const myPath = shortestPath(s, me);
   if (myPath) {
     const myDist = myPath.length - 1;
     const keepsMyPath = (m: Move) => shortestDistance(applyMove(s, m), me) === myDist;

@@ -285,6 +285,37 @@ describe('高速化した処理が元の処理と一致する', () => {
     }
   });
 
+  it('壁の候補は isLegalWall で判定した場合と同じ', () => {
+    // 参照実装: 相手の最短経路の各歩をふさぐ壁を isLegalWall で判定する（高速化前のやり方）
+    const reference = (s: GameState) => {
+      if (s.wallsLeft[s.turn] <= 0) return [];
+      const path = shortestPath(s, (1 - s.turn) as 0 | 1)!;
+      const keys: string[] = [];
+      const add = (x: number, y: number, o: 'h' | 'v') => {
+        const k = `${x},${y},${o}`;
+        if (x >= 0 && y >= 0 && x < 8 && y < 8 && !keys.includes(k) && isLegalWall(s, x, y, o)) keys.push(k);
+      };
+      for (let i = 0; i + 1 < path.length; i++) {
+        const [a, b] = [path[i], path[i + 1]];
+        if (a.x === b.x) {
+          add(a.x, Math.min(a.y, b.y), 'h');
+          add(a.x - 1, Math.min(a.y, b.y), 'h');
+        } else {
+          add(Math.min(a.x, b.x), a.y, 'v');
+          add(Math.min(a.x, b.x), a.y - 1, 'v');
+        }
+      }
+      return keys.sort();
+    };
+    for (const s of randomStates(300)) {
+      const fast = candidateWalls(s).map((m) => (m.type === 'wall' ? `${m.x},${m.y},${m.o}` : '')).sort();
+      expect(fast).toEqual(reference(s));
+      for (const m of candidateWalls(s, true)) {
+        if (m.type === 'wall') expect(isLegalWall(s, m.x, m.y, m.o)).toBe(true);
+      }
+    }
+  });
+
   it('makeMove → unmakeMove で元の盤面に戻る', () => {
     for (const s of randomStates(100)) {
       const before = JSON.stringify({ ...s, hWalls: [...s.hWalls], vWalls: [...s.vWalls] });
