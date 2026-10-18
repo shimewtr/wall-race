@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       minutes:
-        description: 学習する分数
+        description: 学習する分数（各ランナー）
         default: '45'
 
 # 同時に走らせない（Mac とは training/ の差分マージで同期する）
@@ -18,12 +18,16 @@ concurrency:
 
 permissions:
   contents: write
-  actions: write
 
 jobs:
   train:
+    # 4 台で並列に学習し、それぞれの進捗を training/ に足し込む
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [1, 2, 3, 4]
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -34,13 +38,22 @@ jobs:
       - name: Train
         env:
           MINUTES: ${{ inputs.minutes || '45' }}
+          RUNNER: ${{ matrix.runner }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          npm run train -- --minutes "$MINUTES"
+          # 終わる時刻を 2 分ずつずらして push の競合を減らす
+          npm run train -- --minutes "$(( MINUTES - (RUNNER - 1) * 2 ))" --source "actions-$RUNNER"
       - run: npm run status
+
+  chain:
+    needs: train
+    if: success() && vars.TRAIN_CHAIN != 'off'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
       - name: Queue next run
-        if: success() && vars.TRAIN_CHAIN != 'off'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run Train --repo "$GITHUB_REPOSITORY" --ref main

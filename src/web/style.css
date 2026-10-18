@@ -241,6 +241,10 @@ h1 {
   color: var(--muted);
 }
 
+.ai-gen a {
+  color: inherit;
+}
+
 h2 {
   margin: 0 0 4px;
   font-size: 14px;

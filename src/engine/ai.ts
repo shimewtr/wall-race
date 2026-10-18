@@ -63,6 +63,8 @@ export interface SearchOptions {
   recent?: Pos[];
   // 戻る手の減点（1 歩 = 10 点。同点に近い手どうしの順位だけを変える大きさ）
   repeatPenalty?: number;
+  // いま指す手の候補に、守りの壁やコマ周りの壁も含める（読みの途中は相手の経路をふさぐ壁だけ）
+  wideRoot?: boolean;
 }
 
 export const REPEAT_PENALTY = 8;
@@ -122,20 +124,36 @@ export function evaluate(s: GameState, w: Weights = DEFAULT_WEIGHTS): number {
   return score;
 }
 
-// 探索する壁の候補: 相手の最短経路上の一歩一歩をふさぐ壁だけに絞る
-export function candidateWalls(s: GameState): Move[] {
+// 探索する壁の候補。
+// 基本は「相手の最短経路の一歩一歩をふさぐ壁」だけ（読みの途中はこれで十分かつ軽い）。
+// wide のときは加えて、
+//   - どちらかのコマに接する壁（足止め・回り込みの準備）
+//   - 自分の最短経路に接していて、自分の経路は伸ばさない壁（相手に道をふさがれないための守りの壁）
+// も候補にする。根（いま指す手）でだけ使う。
+export function candidateWalls(s: GameState, wide = false): Move[] {
   if (s.wallsLeft[s.turn] <= 0) return [];
-  const op = (1 - s.turn) as Player;
+  const me = s.turn;
+  const op = (1 - me) as Player;
   const path = shortestPath(s, op);
   if (!path) return [];
   const seen = new Set<number>();
   const result: Move[] = [];
-  const add = (x: number, y: number, o: 'h' | 'v') => {
+  const add = (x: number, y: number, o: 'h' | 'v', keep: (m: Move) => boolean = () => true) => {
     if (x < 0 || y < 0 || x >= WALL_SLOTS || y >= WALL_SLOTS) return;
     const key = (o === 'h' ? 0 : 64) + y * WALL_SLOTS + x;
     if (seen.has(key)) return;
     seen.add(key);
-    if (isLegalWall(s, x, y, o)) result.push({ type: 'wall', x, y, o });
+    const m: Move = { type: 'wall', x, y, o };
+    if (isLegalWall(s, x, y, o) && keep(m)) result.push(m);
+  };
+  // マス (cx, cy) の辺に接する壁のアンカー
+  const around = (cx: number, cy: number, keep?: (m: Move) => boolean) => {
+    for (const ay of [cy - 1, cy]) {
+      for (const ax of [cx - 1, cx]) {
+        add(ax, ay, 'h', keep);
+        add(ax, ay, 'v', keep);
+      }
+    }
   };
   for (let i = 0; i + 1 < path.length; i++) {
     const a = path[i];
@@ -150,17 +168,25 @@ export function candidateWalls(s: GameState): Move[] {
       add(x, a.y - 1, 'v');
     }
   }
+  if (!wide) return result;
+  for (const p of s.pawns) around(p.x, p.y);
+  const myPath = shortestPath(s, me);
+  if (myPath) {
+    const myDist = myPath.length - 1;
+    const keepsMyPath = (m: Move) => shortestDistance(applyMove(s, m), me) === myDist;
+    for (const c of myPath) around(c.x, c.y, keepsMyPath);
+  }
   return result;
 }
 
-function orderedMoves(s: GameState): Move[] {
+function orderedMoves(s: GameState, wide = false): Move[] {
   const me = s.turn;
   const pawns = pawnMoves(s).map((p) => {
     const m: Move = { type: 'pawn', x: p.x, y: p.y };
     return { m, d: shortestDistance(applyMove(s, m), me) };
   });
   pawns.sort((a, b) => a.d - b.d);
-  return [...pawns.map((p) => p.m), ...candidateWalls(s)];
+  return [...pawns.map((p) => p.m), ...candidateWalls(s, wide)];
 }
 
 export function search(s: GameState, opts: SearchOptions): SearchResult {
@@ -190,7 +216,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
     return best === -Infinity ? evaluate(st, weights) : best;
   };
 
-  const rootMoves = orderedMoves(s);
+  const rootMoves = orderedMoves(s, opts.wideRoot ?? true);
   const recent = opts.recent ?? [];
   const repeatPenalty = opts.repeatPenalty ?? REPEAT_PENALTY;
   const penalty = (m: Move) =>
@@ -238,7 +264,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
 export const LEVELS = {
   easy: { maxDepth: 1, noise: 8 },
   normal: { maxDepth: 2, noise: 2 },
-  hard: { maxDepth: 4, timeMs: 3000, margin: 1 },
+  hard: { maxDepth: 3, timeMs: 5000, margin: 1 },
 } satisfies Record<string, SearchOptions>;
 
 export type Level = keyof typeof LEVELS;

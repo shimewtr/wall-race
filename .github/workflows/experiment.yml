@@ -1,0 +1,39 @@
+name: Experiment
+
+# 重い比較実験を Actions で回す（手元の Mac では回さない）
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: scripts/experiments/ のスクリプト名（拡張子なし）
+        default: compare
+      args:
+        description: スクリプトに渡す引数
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Run
+        env:
+          SCRIPT: ${{ inputs.script }}
+          ARGS: ${{ inputs.args }}
+        run: |
+          set -o pipefail
+          [[ "$SCRIPT" =~ ^[a-z0-9-]+$ ]] || { echo "invalid script name"; exit 1; }
+          # 引数のクォートは xargs で解釈する（eval と違い、引数がコマンドとして実行されることはない）
+          printf '%s' "$ARGS" | xargs npx tsx "scripts/experiments/$SCRIPT.ts" | tee result.txt
+          { echo '```'; cat result.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

@@ -36,14 +36,15 @@ const SYNC = args.sync && !args['no-sync'];
 const SOURCE = args.source ?? (process.env.GITHUB_ACTIONS ? 'actions' : 'mac');
 
 // ---- ハイパーパラメータ ----
-// 学習の対局は基本 2 手読み、一部を 3 手読みにして、浅い読みでだけ効く癖を覚えにくくする
-const trainDepth = () => (Math.random() < 0.3 ? 3 : 2);
+// 学習・判定・Web の「つよい」をすべて 3 手読みにそろえる。
+// 重みの良し悪しは読みの深さで大きく変わるので、使う深さで鍛えて使う深さで判定する
+const DEPTH = 3;
 // 最善から 0.1 歩以内の手をランダムに選ぶ。弱い手は選ばずに棋譜の多様性を確保する
 const MARGIN = 1;
 const OPENING_PLIES = 0;
 const PAIRS_PER_ITER = 16;
-// 判定は読みの深さごとに対戦して平均する。重みの良し悪しが深さで大きく変わるため（Web の「つよい」は 4 手読み）
-const GATE_SUITE: Record<number, number> = { 2: 100, 3: 100, 4: 40 };
+// 判定に使う読みの深さと対局数（深さごとに測って平均する）
+const GATE_SUITE: Record<number, number> = { [DEPTH]: 200 };
 // 昇格条件: 平均勝率が GATE_THRESHOLD 以上、どの深さでも GATE_FLOOR 以上、初期の重みへの勝率が下がっていない
 const GATE_FLOOR = 0.42;
 const INITIAL_TOLERANCE = 0.03;
@@ -184,7 +185,7 @@ async function spsaStep(
   }
   const matches = Array.from({ length: PAIRS_PER_ITER }, () => ({
     opponent: Math.random() < CHAMPION_RATE ? champion : league[Math.floor(Math.random() * league.length)],
-    opts: { depth: trainDepth(), margin: MARGIN, openingPlies: OPENING_PLIES, seed: randomSeed() },
+    opts: { depth: DEPTH, margin: MARGIN, openingPlies: OPENING_PLIES, seed: randomSeed() },
   }));
   const [plusScores, minusScores] = await Promise.all(
     [plus, minus].map((w) => pool.runAll(matches.map((m) => ({ a: w, b: m.opponent, opts: m.opts })))),
@@ -247,7 +248,7 @@ async function runOnce(pool: PairPool, minutes: number) {
     if (iters % 100 === 0) console.log(`  +${iters} iters  ${fmt(theta)}`);
   }
 
-  for (let attempt = 1; attempt <= 5; attempt++) {
+  for (let attempt = 1; attempt <= 10; attempt++) {
     pull();
     // 自分が進めた分だけを最新の状態に足し込む（同時に回っていた他所の進捗も残る）
     const latest = loadState();
@@ -262,8 +263,9 @@ async function runOnce(pool: PairPool, minutes: number) {
     };
 
     const champion = loadChampion();
-    // 古い形式のチャンピオンには深さ別の対初期勝率が無いので、ここで測っておく
-    if (!champion.vsInitialByDepth) {
+    // 判定の条件（深さ）が変わっていたら、チャンピオンの対初期勝率を今の条件で測り直す
+    const suiteKey = (r?: Record<string, number>) => Object.keys(r ?? {}).sort().join(',');
+    if (suiteKey(champion.vsInitialByDepth) !== suiteKey(GATE_SUITE)) {
       const m = await gate(pool, champion.weights, withDefaults());
       champion.vsInitial = m.avg;
       champion.vsInitialByDepth = m.byDepth;
@@ -331,7 +333,7 @@ async function runOnce(pool: PairPool, minutes: number) {
     }
     console.log('  push が競合したので最新を取り込んでやり直します');
   }
-  throw new Error('push に 5 回失敗しました');
+  throw new Error('push に 10 回失敗しました');
 }
 
 const pool = new PairPool(args.threads ? Number(args.threads) : undefined);

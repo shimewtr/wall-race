@@ -1,6 +1,6 @@
 // 自己対戦の 1 局を実行する。Node のワーカーからも呼ばれるので DOM・fs に依存しない。
 
-import { type Weights, recentCells, search } from '../engine/ai';
+import { type SearchOptions, type Weights, recentCells, search } from '../engine/ai';
 import { type GameState, type Player, applyMove, initialState, isOver, pawnMoves } from '../engine/game';
 
 export interface MatchConfig {
@@ -12,6 +12,8 @@ export interface MatchConfig {
   // 序盤に完全ランダムなコマ移動をする手数
   openingPlies: number;
   seed: number;
+  // 先手・後手それぞれの追加の探索オプション（実験で探索方法を比べる用）
+  options?: [Partial<SearchOptions>, Partial<SearchOptions>];
 }
 
 // 再現性のための軽量な乱数（mulberry32）
@@ -38,6 +40,7 @@ export function playMatch(cfg: MatchConfig): Player | null {
       s = applyMove(s, { type: 'pawn', x: p.x, y: p.y });
     } else {
       const { move } = search(s, {
+        ...cfg.options?.[s.turn],
         maxDepth: cfg.depth,
         weights: cfg.weights[s.turn],
         margin: cfg.margin,
@@ -58,7 +61,11 @@ export function playPair(
   opts: Omit<MatchConfig, 'weights'>,
 ): number {
   const first = playMatch({ ...opts, weights: [a, b] });
-  const second = playMatch({ ...opts, weights: [b, a] });
+  const second = playMatch({
+    ...opts,
+    weights: [b, a],
+    options: opts.options ? [opts.options[1], opts.options[0]] : undefined,
+  });
   const score = (w: Player | null, aIs: Player) => (w === null ? 0.5 : w === aIs ? 1 : 0);
   return score(first, 0) + score(second, 1);
 }

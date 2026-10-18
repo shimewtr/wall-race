@@ -247,9 +247,16 @@ function statusText(s: GameState): string {
   return mode === 'human-human' ? `${name(s.turn)}の番` : isHuman(s.turn) ? 'あなたの番' : 'AI の番';
 }
 
-$('ai-gen').textContent = champion
-  ? `AI: 自己対戦で学習した第 ${champion.generation} 世代`
-  : 'AI: 学習前の初期設定';
+{
+  const ai = champion ? `AI: 自己対戦で学習した第 ${champion.generation} 世代` : 'AI: 学習前の初期設定';
+  const built = new Date(__BUILD_TIME__).toLocaleString('ja-JP', {
+    year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+  const link = document.createElement('a');
+  link.href = `https://github.com/shimewtr/wall-race/commit/${__APP_COMMIT__}`;
+  link.textContent = `v${__APP_COMMIT__.slice(0, 7)}`;
+  $('ai-gen').replaceChildren(`${ai} · `, link, `（${built}）`);
+}
 
 $('new-game').addEventListener('click', newGame);
 $('undo').addEventListener('click', undo);

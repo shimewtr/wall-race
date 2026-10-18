@@ -11,7 +11,7 @@ import {
   pawnMoves,
   shortestDistance,
 } from './game';
-import { features, recentCells, search } from './ai';
+import { candidateWalls, features, recentCells, search } from './ai';
 import { rngFrom } from '../train/match';
 
 const sortPos = (ps: { x: number; y: number }[]) =>
@@ -192,5 +192,28 @@ describe('特徴量 lockedRace', () => {
 
   it('お互い壁が残っていれば 0', () => {
     expect(features(initialState()).lockedRace).toBe(0);
+  });
+});
+
+describe('壁の候補（wide）', () => {
+  const key = (m: { x: number; y: number; o?: string }) => `${m.x},${m.y},${m.o}`;
+
+  it('wide は通常の候補をすべて含み、さらに増える', () => {
+    const s = initialState();
+    const narrow = candidateWalls(s).map(key);
+    const wide = candidateWalls(s, true).map(key);
+    for (const k of narrow) expect(wide).toContain(k);
+    expect(wide.length).toBeGreaterThan(narrow.length);
+  });
+
+  it('自分の最短経路を伸ばす壁は守りの壁として加えない', () => {
+    // 先手は e1 から真上（e 列）に進むのが最短。e1-e2 の間をふさぐ横壁は自分の経路を伸ばす
+    const s = initialState();
+    const extra = candidateWalls(s, true).filter((m) => !candidateWalls(s).some((n) => key(n) === key(m)));
+    for (const m of extra) {
+      if (m.type !== 'wall') continue;
+      const touchesPawn = s.pawns.some((p) => (m.x === p.x || m.x === p.x - 1) && (m.y === p.y || m.y === p.y - 1));
+      if (!touchesPawn) expect(shortestDistance(applyMove(s, m), 0)).toBe(8);
+    }
   });
 });
