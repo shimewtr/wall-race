@@ -15,12 +15,19 @@ const { values: args } = parseArgs({
   options: {
     depth: { type: 'string', default: '3' },
     pairs: { type: 'string', default: '40' },
+    weights: { type: 'string', default: 'champion' },
   },
 });
 
 const CHAMPION = join(import.meta.dirname, '..', '..', 'training', 'champion.json');
-const weights = withDefaults(existsSync(CHAMPION) ? JSON.parse(readFileSync(CHAMPION, 'utf8')).weights : {});
+const champion = withDefaults(existsSync(CHAMPION) ? JSON.parse(readFileSync(CHAMPION, 'utf8')).weights : {});
+const weights = args.weights!.startsWith('champion+')
+  ? { ...champion, ...JSON.parse(args.weights!.slice('champion+'.length)) }
+  : args.weights === 'champion'
+    ? champion
+    : withDefaults(JSON.parse(args.weights!));
 const depth = Number(args.depth);
+console.log(`weights=${args.weights}`);
 
 // 1 コアで、決まった局面集合を探索する時間とノード数
 const positions: GameState[] = [];
