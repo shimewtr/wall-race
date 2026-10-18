@@ -175,8 +175,20 @@ function computeMaxDetour(s: GameState, attacker: Player, victimDist: number): n
 // 本数をそのまま使うと開けた局面の巨大な値に引っ張られるため、対数かつ上限付きにする。
 const ROUTE_COUNTS = new Uint8Array(SIZE * SIZE);
 const ROUTE_COUNT_CAP = 16;
+const routeCache = new Map<number, number>();
+const ROUTE_CACHE_LIMIT = 500_000;
 
-export function shortestRouteDiversity(s: GameState, p: Player): number {
+function routeKey(s: GameState, p: Player): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.hWalls.length; i++) {
+    if (s.hWalls[i]) h = Math.imul(h ^ (i + 1), 0x01000193);
+    if (s.vWalls[i]) h = Math.imul(h ^ (i + 101), 0x01000193);
+  }
+  const pawn = s.pawns[p];
+  return Math.imul(h ^ (p * 81 + pawn.y * 9 + pawn.x), 0x01000193) >>> 0;
+}
+
+function computeShortestRouteDiversity(s: GameState, p: Player): number {
   const distances = goalDistances(s, p);
   const start = s.pawns[p];
   const startIdx = start.y * SIZE + start.x;
@@ -201,6 +213,16 @@ export function shortestRouteDiversity(s: GameState, p: Player): number {
     }
   }
   return Math.log2(ROUTE_COUNTS[startIdx] || 1);
+}
+
+export function shortestRouteDiversity(s: GameState, p: Player): number {
+  const key = routeKey(s, p);
+  const cached = routeCache.get(key);
+  if (cached !== undefined) return cached;
+  const result = computeShortestRouteDiversity(s, p);
+  if (routeCache.size >= ROUTE_CACHE_LIMIT) routeCache.clear();
+  routeCache.set(key, result);
+  return result;
 }
 
 // myDist / opDist（手番側・相手の最短歩数）が分かっていれば渡すと探索を省ける。
