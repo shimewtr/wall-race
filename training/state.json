@@ -1,15 +1,15 @@
 {
-  "iteration": 22462,
-  "pairs": 359392,
+  "iteration": 34595,
+  "pairs": 553520,
   "theta": {
     "pathDiff": 10,
-    "rowDiff": -1.314,
-    "wallDiff": 12.483,
-    "myWalls": 12.191,
-    "urgency": 665.637,
-    "wallsWhenClose": 68.866,
-    "center": -0.558,
-    "adjacent": 2.985
+    "rowDiff": -1.271,
+    "wallDiff": 11.076,
+    "myWalls": 16.986,
+    "urgency": 887.044,
+    "wallsWhenClose": 89.335,
+    "center": -0.178,
+    "adjacent": 2.512
   },
-  "updatedAt": "2026-10-18T01:52:10.692Z"
+  "updatedAt": "2026-10-18T02:22:29.982Z"
 }
