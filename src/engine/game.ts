@@ -115,9 +115,64 @@ export function pawnMoves(s: GameState, p: Player = s.turn): Pos[] {
 }
 
 // ゴール行までの最短歩数（駒は無視、壁のみ考慮）。到達不能なら -1。
+// 探索の中で何万回も呼ばれるので、経路は作らず距離だけを求め、作業用の配列も使い回す
+const DIST = new Int16Array(SIZE * SIZE);
+const QUEUE = new Int16Array(SIZE * SIZE);
+
 export function shortestDistance(s: GameState, p: Player): number {
-  const path = shortestPath(s, p);
-  return path ? path.length - 1 : -1;
+  const start = s.pawns[p];
+  const goal = goalRow(p);
+  if (start.y === goal) return 0;
+  DIST.fill(-1);
+  const startIdx = start.y * SIZE + start.x;
+  DIST[startIdx] = 0;
+  let head = 0;
+  let tail = 0;
+  QUEUE[tail++] = startIdx;
+  while (head < tail) {
+    const idx = QUEUE[head++];
+    const x = idx % SIZE;
+    const y = (idx - x) / SIZE;
+    for (const [dx, dy] of DIRS) {
+      if (!canStep(s, x, y, dx, dy)) continue;
+      const nIdx = (y + dy) * SIZE + (x + dx);
+      if (DIST[nIdx] !== -1) continue;
+      DIST[nIdx] = DIST[idx] + 1;
+      if (y + dy === goal) return DIST[nIdx];
+      QUEUE[tail++] = nIdx;
+    }
+  }
+  return -1;
+}
+
+// 各マスから p のゴール行までの最短歩数（壁のみ考慮。到達不能は -1）。
+// 結果の配列は次の呼び出しで上書きされるので、すぐに読むこと
+const GOAL_DIST = new Int16Array(SIZE * SIZE);
+
+export function goalDistances(s: GameState, p: Player): Int16Array {
+  const goal = goalRow(p);
+  GOAL_DIST.fill(-1);
+  let head = 0;
+  let tail = 0;
+  for (let x = 0; x < SIZE; x++) {
+    const idx = goal * SIZE + x;
+    GOAL_DIST[idx] = 0;
+    QUEUE[tail++] = idx;
+  }
+  // 壁は両方向をふさぐので、ゴール側から逆にたどっても同じ距離になる
+  while (head < tail) {
+    const idx = QUEUE[head++];
+    const x = idx % SIZE;
+    const y = (idx - x) / SIZE;
+    for (const [dx, dy] of DIRS) {
+      if (!canStep(s, x, y, dx, dy)) continue;
+      const nIdx = (y + dy) * SIZE + (x + dx);
+      if (GOAL_DIST[nIdx] !== -1) continue;
+      GOAL_DIST[nIdx] = GOAL_DIST[idx] + 1;
+      QUEUE[tail++] = nIdx;
+    }
+  }
+  return GOAL_DIST;
 }
 
 // ゴール行までの最短経路（始点を含む）。到達不能なら null。
@@ -231,6 +286,33 @@ export function applyMoveInPlace(s: GameState, m: Move): void {
   s.turn = (1 - p) as Player;
   s.ply++;
   if (s.winner === null && s.ply >= MAX_PLIES) s.draw = true;
+}
+
+// 探索用: 盤面を複製せずにその場で指し、unmakeMove で元に戻す
+export interface Undo {
+  pawn: Pos;
+  winner: Player | null;
+  draw: boolean;
+}
+
+export function makeMove(s: GameState, m: Move): Undo {
+  const undo: Undo = { pawn: s.pawns[s.turn], winner: s.winner, draw: s.draw };
+  applyMoveInPlace(s, m);
+  return undo;
+}
+
+export function unmakeMove(s: GameState, m: Move, undo: Undo): void {
+  const p = (1 - s.turn) as Player;
+  s.turn = p;
+  s.ply--;
+  s.winner = undo.winner;
+  s.draw = undo.draw;
+  if (m.type === 'pawn') {
+    s.pawns[p] = undo.pawn;
+  } else {
+    (m.o === 'h' ? s.hWalls : s.vWalls)[m.y * WALL_SLOTS + m.x] = 0;
+    s.wallsLeft[p]++;
+  }
 }
 
 // 棋譜用の表記。列 a-i（左から）、行 1-9（下から）。壁はアンカー左上のマス + h/v（例: e3h）。

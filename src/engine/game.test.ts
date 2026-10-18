@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   type GameState,
   applyMove,
+  cloneState,
+  goalDistances,
+  makeMove,
+  shortestPath,
+  unmakeMove,
   initialState,
   isLegal,
   isLegalWall,
@@ -231,5 +236,63 @@ describe('手引き AI', () => {
     const m = guideMove(s);
     expect(m.type).toBe('wall');
     expect(shortestDistance(applyMove(s, m), 1)).toBeGreaterThan(3);
+  });
+});
+
+describe('高速化した処理が元の処理と一致する', () => {
+  // 壁をランダムに置いた局面をたくさん作る
+  const randomStates = (n: number) => {
+    const rng = rngFrom(42);
+    const states: GameState[] = [];
+    for (let i = 0; i < n; i++) {
+      let s = initialState();
+      s.pawns = [
+        { x: Math.floor(rng() * 9), y: 1 + Math.floor(rng() * 7) },
+        { x: Math.floor(rng() * 9), y: 1 + Math.floor(rng() * 7) },
+      ];
+      const walls = Math.floor(rng() * 16);
+      for (let k = 0; k < walls; k++) {
+        const m = { type: 'wall' as const, x: Math.floor(rng() * 8), y: Math.floor(rng() * 8), o: rng() < 0.5 ? ('h' as const) : ('v' as const) };
+        s.turn = (k % 2) as 0 | 1;
+        if (isLegal(s, m)) s = applyMove(s, m);
+      }
+      s.turn = (i % 2) as 0 | 1;
+      states.push(s);
+    }
+    return states;
+  };
+
+  it('shortestDistance は最短経路の長さと同じ', () => {
+    for (const s of randomStates(300)) {
+      for (const p of [0, 1] as const) {
+        const path = shortestPath(s, p);
+        expect(shortestDistance(s, p)).toBe(path ? path.length - 1 : -1);
+      }
+    }
+  });
+
+  it('goalDistances は各マスにコマを置いたときの最短距離と同じ', () => {
+    for (const s of randomStates(40)) {
+      const p = s.turn;
+      const map = Array.from(goalDistances(s, p));
+      for (let y = 0; y < 9; y++) {
+        for (let x = 0; x < 9; x++) {
+          const t = cloneState(s);
+          t.pawns[p] = { x, y };
+          expect(map[y * 9 + x]).toBe(shortestDistance(t, p));
+        }
+      }
+    }
+  });
+
+  it('makeMove → unmakeMove で元の盤面に戻る', () => {
+    for (const s of randomStates(100)) {
+      const before = JSON.stringify({ ...s, hWalls: [...s.hWalls], vWalls: [...s.vWalls] });
+      for (const m of legalMoves(s)) {
+        const undo = makeMove(s, m);
+        unmakeMove(s, m, undo);
+      }
+      expect(JSON.stringify({ ...s, hWalls: [...s.hWalls], vWalls: [...s.vWalls] })).toBe(before);
+    }
   });
 });

@@ -6,8 +6,13 @@ import {
   type Move,
   type Player,
   type Pos,
+  SIZE,
   WALL_SLOTS,
   applyMove,
+  cloneState,
+  goalDistances,
+  makeMove,
+  unmakeMove,
   goalRow,
   isLegalWall,
   isOver,
@@ -180,11 +185,12 @@ export function candidateWalls(s: GameState, wide = false): Move[] {
 }
 
 function orderedMoves(s: GameState, wide = false): Move[] {
-  const me = s.turn;
-  const pawns = pawnMoves(s).map((p) => {
-    const m: Move = { type: 'pawn', x: p.x, y: p.y };
-    return { m, d: shortestDistance(applyMove(s, m), me) };
-  });
+  // 前進の手は「移動先からゴールまでの歩数」が小さい順。距離はゴール側から 1 回で全マス分求める
+  const dist = goalDistances(s, s.turn);
+  const pawns = pawnMoves(s).map((p) => ({
+    m: { type: 'pawn', x: p.x, y: p.y } as Move,
+    d: dist[p.y * SIZE + p.x] < 0 ? Infinity : dist[p.y * SIZE + p.x],
+  }));
   pawns.sort((a, b) => a.d - b.d);
   return [...pawns.map((p) => p.m), ...candidateWalls(s, wide)];
 }
@@ -208,7 +214,9 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
     if (depth === 0) return evaluate(st, weights);
     let best = -Infinity;
     for (const m of orderedMoves(st)) {
-      const v = -negamax(applyMove(st, m), depth - 1, -beta, -alpha, ply + 1);
+      const undo = makeMove(st, m);
+      const v = -negamax(st, depth - 1, -beta, -alpha, ply + 1);
+      unmakeMove(st, m, undo);
       if (v > best) best = v;
       if (v > alpha) alpha = v;
       if (alpha >= beta) break;
@@ -225,6 +233,8 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
   let result: SearchResult = { move: rootMoves[0], score: 0, depth: 0, nodes: 0 };
 
   for (let depth = 1; depth <= opts.maxDepth; depth++) {
+    // 時間切れで途中で抜けると盤面が戻らないので、深さごとに作業用の複製を使う
+    const work = cloneState(s);
     try {
       let bestScore = -Infinity;
       let bestMove = rootMoves[0];
@@ -232,10 +242,12 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
       const scored: Array<{ m: Move; v: number }> = [];
       for (const m of rootMoves) {
         // 最善手から margin 以内の手も正確な値が出るよう、窓を margin 分広げて読む
+        const undo = makeMove(work, m);
         const v =
-          -negamax(applyMove(s, m), depth - 1, -Infinity, -(alpha - margin), 1) -
+          -negamax(work, depth - 1, -Infinity, -(alpha - margin), 1) -
           penalty(m) +
           (noise ? (rng() - 0.5) * noise : 0);
+        unmakeMove(work, m, undo);
         scored.push({ m, v });
         if (v > bestScore) {
           bestScore = v;
