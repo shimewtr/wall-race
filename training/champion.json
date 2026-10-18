@@ -8,7 +8,8 @@
     "urgency": 665.637,
     "wallsWhenClose": 68.866,
     "center": -0.558,
-    "adjacent": 2.985
+    "adjacent": 2.985,
+    "lockedRace": 0
   },
   "promotedAt": "2026-10-18T01:52:10.692Z",
   "source": "mac",
@@ -17,5 +18,10 @@
     "pairs": 200,
     "depth": 3
   },
-  "vsInitial": 0.568
+  "vsInitial": 0.608,
+  "vsInitialByDepth": {
+    "2": 0.495,
+    "3": 0.605,
+    "4": 0.725
+  }
 }
