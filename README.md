@@ -29,6 +29,8 @@ npm run dev
 | `src/engine/ai.ts` | 探索 AI（αβ 探索 + 反復深化）。評価関数は重みベクトル `Weights` |
 | `src/web/` | ブラウザ UI。AI は Web Worker で動く |
 | `scripts/arena.ts` | AI 同士を対戦させて勝率を出す |
+| `scripts/train.ts` | 自己対戦で評価関数の重みを調整する（SPSA） |
+| `training/` | 学習の状態。リポジトリで同期する（下記） |
 
 ## 棋譜表記
 
@@ -44,3 +46,25 @@ npm run arena -- --games 20 --a '{"maxDepth":3}' --b '{"maxDepth":2,"noise":2}'
 ```
 
 `--a` / `--b` には `SearchOptions`（`maxDepth`, `timeMs`, `weights`, `noise`）を JSON で渡す。
+
+## 学習
+
+```sh
+npm run train -- --minutes 30            # 30 分回して結果を push
+npm run train -- --loop                  # 30 分ごとに push しながら回し続ける
+npm run train -- --minutes 5 --no-sync   # git 操作なしで手元だけで試す
+```
+
+1. 学習中の重みを少し＋にずらした AI と－にずらした AI を、先後入れ替えで 32 局対戦させ、勝った方向へ重みを少し動かす（SPSA）。これを制限時間まで繰り返す
+2. 終わったら最新を pull し、自分が進めた分の差分だけを最新の重みに足し込む（Mac と GitHub Actions で同時に回しても進捗が消えない）
+3. 現チャンピオンと 400 局対戦し、勝率 55% 以上なら新しい世代に昇格
+4. `training/` を commit して push（競合したら 2 からやり直し）
+
+| ファイル | 更新タイミング | 中身 |
+| --- | --- | --- |
+| `training/state.json` | 毎回 | 学習中の重み・累計の反復回数 |
+| `training/history.jsonl` | 毎回 1 行追記 | 実行ごとの記録（場所・回数・重み・チャンピオンへの勝率・昇格したか） |
+| `training/champion.json` | 昇格時 | 現チャンピオンの重み |
+| `training/champions/gen-NNNN.json` | 昇格時 | 世代ごとのスナップショット |
+
+評価は「1 歩 = 10 点」を単位にしているので、重みはそのまま「何歩分の価値か」と読める。

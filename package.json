@@ -9,10 +9,12 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "arena": "tsx scripts/arena.ts"
+    "arena": "tsx scripts/arena.ts",
+    "train": "tsx scripts/train.ts",
+    "status": "tsx scripts/status.ts"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^24.19.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",

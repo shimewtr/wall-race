@@ -11,7 +11,8 @@ import {
   pawnMoves,
   shortestDistance,
 } from './game';
-import { search } from './ai';
+import { recentCells, search } from './ai';
+import { rngFrom } from '../train/match';
 
 const sortPos = (ps: { x: number; y: number }[]) =>
   ps.map((p) => `${p.x},${p.y}`).sort();
@@ -116,5 +117,61 @@ describe('AI', () => {
     const r = search(s, { maxDepth: 2 });
     expect(r.move.type).toBe('wall');
     expect(isLegal(s, r.move)).toBe(true);
+  });
+});
+
+describe('行ったり来たり防止', () => {
+  it('recentCells は自分の手番で直近にいたマスを返す（現在地は除く）', () => {
+    const h: GameState[] = [initialState()];
+    const play = (m: Parameters<typeof applyMove>[1]) => h.push(applyMove(h[h.length - 1], m));
+    play({ type: 'pawn', x: 3, y: 8 }); // 先手 e1 → d1
+    play({ type: 'pawn', x: 4, y: 1 });
+    play({ type: 'pawn', x: 4, y: 8 }); // 先手 d1 → e1（戻った）
+    play({ type: 'pawn', x: 4, y: 2 });
+    expect(recentCells(h, 0)).toEqual([{ x: 3, y: 8 }]);
+  });
+
+  const flat = { pathDiff: 0, wallDiff: 0, myWalls: 0, urgency: 0 };
+
+  it('同点の手なら直近にいたマスへは戻らない', () => {
+    // 評価をすべて 0 にして全手同点にする。減点がなければ並び順で先頭の前進 (e2) を選ぶ
+    const s = initialState();
+    s.wallsLeft[0] = 0;
+    expect(search(s, { maxDepth: 1, weights: flat }).move).toEqual({ type: 'pawn', x: 4, y: 7 });
+    const r = search(s, { maxDepth: 1, weights: flat, recent: [{ x: 4, y: 7 }] });
+    expect(r.move.type).toBe('pawn');
+    expect(r.move).not.toEqual({ type: 'pawn', x: 4, y: 7 });
+  });
+
+  it('1 歩得するなら直近にいたマスへでも戻る', () => {
+    const s = initialState();
+    s.wallsLeft[0] = 0;
+    const r = search(s, { maxDepth: 1, recent: [{ x: 4, y: 7 }] });
+    expect(r.move).toEqual({ type: 'pawn', x: 4, y: 7 });
+  });
+});
+
+describe('ランダム性（margin）', () => {
+  const flat = { pathDiff: 0, wallDiff: 0, myWalls: 0, urgency: 0 };
+
+  it('同点の手が複数あれば乱数によって違う手を選ぶ', () => {
+    const s = initialState();
+    s.wallsLeft[0] = 0;
+    const picked = new Set(
+      Array.from({ length: 20 }, (_, i) => {
+        const r = search(s, { maxDepth: 1, weights: flat, margin: 1, rng: rngFrom(i + 1) });
+        return moveToString(r.move);
+      }),
+    );
+    expect(picked.size).toBeGreaterThan(1);
+  });
+
+  it('margin を超えて悪い手は選ばない', () => {
+    const s = initialState();
+    s.wallsLeft[0] = 0;
+    for (let i = 0; i < 20; i++) {
+      const r = search(s, { maxDepth: 2, margin: 1, rng: rngFrom(i + 1) });
+      expect(r.move).toEqual({ type: 'pawn', x: 4, y: 7 });
+    }
   });
 });

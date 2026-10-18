@@ -5,8 +5,10 @@ import {
   type GameState,
   type Move,
   type Player,
+  type Pos,
   WALL_SLOTS,
   applyMove,
+  goalRow,
   isLegalWall,
   isOver,
   pawnMoves,
@@ -14,31 +16,65 @@ import {
   shortestPath,
 } from './game';
 
-export interface Weights {
-  // (相手の最短距離 - 自分の最短距離)
-  pathDiff: number;
-  // (自分の残り壁 - 相手の残り壁)
-  wallDiff: number;
-  // 自分の残り壁の絶対量（壁を温存する価値）
-  myWalls: number;
-  // ゴール間近の重み: (1/(自分の距離+1) - 1/(相手の距離+1))。終盤ほど 1 歩の価値が上がる
-  urgency: number;
-}
+// 評価に使う特徴量。すべて「手番側から見て」大きいほど良い向きで定義する。
+// 学習で重みが決まると、そのまま「何を重視すべきか」の人間向けの説明になる。
+export const FEATURES = {
+  pathDiff: '最短経路の差（相手の残り歩数 - 自分の残り歩数）',
+  rowDiff: '壁を無視した前進の差（相手のゴールまでの段数 - 自分の段数）',
+  wallDiff: '残り壁の差（自分 - 相手）',
+  myWalls: '自分の残り壁の数',
+  urgency: '終盤の 1 歩の重さ（1/(自分の歩数+1) - 1/(相手の歩数+1)）',
+  wallsWhenClose: '相手がゴールに近いほど自分の壁に価値（自分の壁/(相手の歩数+1) - 相手の壁/(自分の歩数+1)）',
+  center: '中央寄り（相手の中央からの横ずれ - 自分の横ずれ）',
+  adjacent: '相手と隣接している（手番側は飛び越えのチャンス）',
+} as const;
+
+export type Feature = keyof typeof FEATURES;
+export type Weights = Record<Feature, number>;
+export const FEATURE_NAMES = Object.keys(FEATURES) as Feature[];
 
 export const DEFAULT_WEIGHTS: Weights = {
   pathDiff: 10,
+  rowDiff: 0,
   wallDiff: 2,
   myWalls: 0.5,
   urgency: 20,
+  wallsWhenClose: 0,
+  center: 0,
+  adjacent: 0,
 };
+
+// 古い保存データに無い特徴量はデフォルト値で補う
+export const withDefaults = (w: Partial<Weights> = {}): Weights => ({ ...DEFAULT_WEIGHTS, ...w });
 
 export interface SearchOptions {
   maxDepth: number;
   timeMs?: number;
-  weights?: Weights;
-  // 評価値に加えるランダムノイズの幅（自己対戦で同じ棋譜ばかりにならないように）
+  weights?: Partial<Weights>;
+  // 評価値に加えるランダムノイズの幅。弱い手も選ばれうるので、わざと手加減するレベル向け
   noise?: number;
+  // 最善手からこの点数差以内の手の中からランダムに選ぶ（1 歩 = 10 点）。
+  // 強さを落とさずに毎回同じ棋譜になるのを避けるためのもの
+  margin?: number;
   rng?: () => number;
+  // 自分のコマが直近にいたマス。ここへ戻る手は少し減点して、行ったり来たりを防ぐ
+  recent?: Pos[];
+  // 戻る手の減点（1 歩 = 10 点。同点に近い手どうしの順位だけを変える大きさ）
+  repeatPenalty?: number;
+}
+
+export const REPEAT_PENALTY = 8;
+
+// 対局の状態履歴から、player のコマが直近 n 手番でいたマスを返す（現在地は除く）
+export function recentCells(history: GameState[], player: Player, n = 4): Pos[] {
+  const cur = history[history.length - 1].pawns[player];
+  const cells: Pos[] = [];
+  for (let i = history.length - 2; i >= 0 && cells.length < n; i--) {
+    if (history[i].turn !== player) continue;
+    const p = history[i].pawns[player];
+    if (p.x !== cur.x || p.y !== cur.y) cells.push(p);
+  }
+  return cells;
 }
 
 export interface SearchResult {
@@ -52,20 +88,33 @@ const WIN = 100000;
 
 class Timeout extends Error {}
 
-// 手番側から見た静的評価
-export function evaluate(s: GameState, w: Weights = DEFAULT_WEIGHTS): number {
+export function features(s: GameState): Weights {
   const me = s.turn;
   const op = (1 - me) as Player;
-  if (s.winner !== null) return s.winner === me ? WIN : -WIN;
-  if (s.draw) return 0;
   const myDist = shortestDistance(s, me);
   const opDist = shortestDistance(s, op);
-  return (
-    w.pathDiff * (opDist - myDist) +
-    w.wallDiff * (s.wallsLeft[me] - s.wallsLeft[op]) +
-    w.myWalls * s.wallsLeft[me] +
-    w.urgency * (1 / (myDist + 1) - 1 / (opDist + 1))
-  );
+  const my = s.pawns[me];
+  const o = s.pawns[op];
+  return {
+    pathDiff: opDist - myDist,
+    rowDiff: Math.abs(goalRow(op) - o.y) - Math.abs(goalRow(me) - my.y),
+    wallDiff: s.wallsLeft[me] - s.wallsLeft[op],
+    myWalls: s.wallsLeft[me],
+    urgency: 1 / (myDist + 1) - 1 / (opDist + 1),
+    wallsWhenClose: s.wallsLeft[me] / (opDist + 1) - s.wallsLeft[op] / (myDist + 1),
+    center: Math.abs(o.x - 4) - Math.abs(my.x - 4),
+    adjacent: Math.abs(my.x - o.x) + Math.abs(my.y - o.y) === 1 ? 1 : 0,
+  };
+}
+
+// 手番側から見た静的評価
+export function evaluate(s: GameState, w: Weights = DEFAULT_WEIGHTS): number {
+  if (s.winner !== null) return s.winner === s.turn ? WIN : -WIN;
+  if (s.draw) return 0;
+  const f = features(s);
+  let score = 0;
+  for (const k of FEATURE_NAMES) score += w[k] * f[k];
+  return score;
 }
 
 // 探索する壁の候補: 相手の最短経路上の一歩一歩をふさぐ壁だけに絞る
@@ -110,9 +159,10 @@ function orderedMoves(s: GameState): Move[] {
 }
 
 export function search(s: GameState, opts: SearchOptions): SearchResult {
-  const weights = opts.weights ?? DEFAULT_WEIGHTS;
+  const weights = withDefaults(opts.weights);
   const rng = opts.rng ?? Math.random;
   const noise = opts.noise ?? 0;
+  const margin = opts.margin ?? 0;
   const deadline = opts.timeMs ? Date.now() + opts.timeMs : Infinity;
   let nodes = 0;
 
@@ -136,6 +186,10 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
   };
 
   const rootMoves = orderedMoves(s);
+  const recent = opts.recent ?? [];
+  const repeatPenalty = opts.repeatPenalty ?? REPEAT_PENALTY;
+  const penalty = (m: Move) =>
+    m.type === 'pawn' && recent.some((p) => p.x === m.x && p.y === m.y) ? repeatPenalty : 0;
   if (rootMoves.length === 0) throw new Error('no legal moves');
   let result: SearchResult = { move: rootMoves[0], score: 0, depth: 0, nodes: 0 };
 
@@ -146,13 +200,21 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
       let alpha = -Infinity;
       const scored: Array<{ m: Move; v: number }> = [];
       for (const m of rootMoves) {
-        const v = -negamax(applyMove(s, m), depth - 1, -Infinity, -alpha, 1) + (noise ? (rng() - 0.5) * noise : 0);
+        // 最善手から margin 以内の手も正確な値が出るよう、窓を margin 分広げて読む
+        const v =
+          -negamax(applyMove(s, m), depth - 1, -Infinity, -(alpha - margin), 1) -
+          penalty(m) +
+          (noise ? (rng() - 0.5) * noise : 0);
         scored.push({ m, v });
         if (v > bestScore) {
           bestScore = v;
           bestMove = m;
         }
         if (v > alpha) alpha = v;
+      }
+      if (margin > 0) {
+        const near = scored.filter((x) => x.v >= bestScore - margin);
+        bestMove = near[Math.floor(rng() * near.length)].m;
       }
       result = { move: bestMove, score: bestScore, depth, nodes };
       // 次の深さでは良かった手から読む
@@ -171,7 +233,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
 export const LEVELS = {
   easy: { maxDepth: 1, noise: 8 },
   normal: { maxDepth: 2, noise: 2 },
-  hard: { maxDepth: 4, timeMs: 3000 },
+  hard: { maxDepth: 4, timeMs: 3000, margin: 1 },
 } satisfies Record<string, SearchOptions>;
 
 export type Level = keyof typeof LEVELS;

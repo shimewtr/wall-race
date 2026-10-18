@@ -1,4 +1,4 @@
-import type { Level } from '../engine/ai';
+import { type Level, recentCells } from '../engine/ai';
 import {
   type GameState,
   type Move,
@@ -63,7 +63,12 @@ function maybeAskAi() {
   if (isOver(s) || isHuman(s.turn)) return;
   thinking = true;
   render();
-  const req: AiRequest = { id: ++requestId, state: s, level: levelEl.value as Level };
+  const req: AiRequest = {
+    id: ++requestId,
+    state: s,
+    level: levelEl.value as Level,
+    recent: recentCells(history, s.turn),
+  };
   // AI どうしの対局は見やすいように少し間を置く
   const delay = mode === 'ai-ai' ? 400 : 0;
   setTimeout(() => {

@@ -1,14 +1,15 @@
 import { type Level, LEVELS, search } from '../engine/ai';
-import type { GameState } from '../engine/game';
+import type { GameState, Pos } from '../engine/game';
 
 export interface AiRequest {
   id: number;
   state: GameState;
   level: Level;
+  recent: Pos[];
 }
 
 self.onmessage = (e: MessageEvent<AiRequest>) => {
-  const { id, state, level } = e.data;
-  const result = search(state, LEVELS[level]);
+  const { id, state, level, recent } = e.data;
+  const result = search(state, { ...LEVELS[level], recent });
   self.postMessage({ id, move: result.move });
 };
