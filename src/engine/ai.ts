@@ -6,9 +6,11 @@ import {
   type Move,
   type Player,
   type Pos,
+  DIRS,
   SIZE,
   WALL_SLOTS,
   applyMove,
+  canStep,
   cloneState,
   goalDistances,
   makeMove,
@@ -34,6 +36,7 @@ export const FEATURES = {
   adjacent: '相手と隣接している（手番側は飛び越えのチャンス）',
   lockedRace: '壁が尽きて歩数勝負が確定している（相手の壁 0 で自分が先着できる +1、自分の壁 0 で相手が先着できる -1）',
   wallThreat: '壁 1 枚で相手を遠回りさせられる最大の歩数 − 相手が壁 1 枚で自分を遠回りさせられる最大の歩数（壁が尽きた側は 0）',
+  routeDiversity: '最短ルートの本数の差（自分 − 相手。2 倍ごとに +1、16 本で頭打ち）',
 } as const;
 
 export type Feature = keyof typeof FEATURES;
@@ -51,6 +54,7 @@ export const DEFAULT_WEIGHTS: Weights = {
   adjacent: 0,
   lockedRace: 0,
   wallThreat: 0,
+  routeDiversity: 0,
 };
 
 // 古い保存データに無い特徴量はデフォルト値で補う
@@ -167,6 +171,38 @@ function computeMaxDetour(s: GameState, attacker: Player, victimDist: number): n
   return best;
 }
 
+// 最短ルートの本数を 16 本まで数え、log2 にした値（1 本=0、2 本=1、4 本=2、…）。
+// 本数をそのまま使うと開けた局面の巨大な値に引っ張られるため、対数かつ上限付きにする。
+const ROUTE_COUNTS = new Uint8Array(SIZE * SIZE);
+const ROUTE_COUNT_CAP = 16;
+
+export function shortestRouteDiversity(s: GameState, p: Player): number {
+  const distances = goalDistances(s, p);
+  const start = s.pawns[p];
+  const startIdx = start.y * SIZE + start.x;
+  const startDist = distances[startIdx];
+  if (startDist <= 0) return 0;
+
+  ROUTE_COUNTS.fill(0);
+  const goal = goalRow(p);
+  for (let x = 0; x < SIZE; x++) ROUTE_COUNTS[goal * SIZE + x] = 1;
+  for (let d = 1; d <= startDist; d++) {
+    for (let idx = 0; idx < distances.length; idx++) {
+      if (distances[idx] !== d) continue;
+      const x = idx % SIZE;
+      const y = (idx - x) / SIZE;
+      let count = 0;
+      for (const [dx, dy] of DIRS) {
+        if (!canStep(s, x, y, dx, dy)) continue;
+        const next = (y + dy) * SIZE + x + dx;
+        if (distances[next] === d - 1) count += ROUTE_COUNTS[next];
+      }
+      ROUTE_COUNTS[idx] = Math.min(count, ROUTE_COUNT_CAP);
+    }
+  }
+  return Math.log2(ROUTE_COUNTS[startIdx] || 1);
+}
+
 // myDist / opDist（手番側・相手の最短歩数）が分かっていれば渡すと探索を省ける。
 // withThreat が false なら重い wallThreat は計算せず 0 にする
 export function features(
@@ -174,6 +210,7 @@ export function features(
   myDist = shortestDistance(s, s.turn),
   opDist = shortestDistance(s, (1 - s.turn) as Player),
   withThreat = true,
+  withRouteDiversity = true,
 ): Weights {
   const me = s.turn;
   const op = (1 - me) as Player;
@@ -192,6 +229,7 @@ export function features(
     lockedRace:
       (s.wallsLeft[op] === 0 && myDist <= opDist ? 1 : 0) - (s.wallsLeft[me] === 0 && opDist < myDist ? 1 : 0),
     wallThreat: withThreat ? maxDetour(s, me, opDist) - maxDetour(s, op, myDist) : 0,
+    routeDiversity: withRouteDiversity ? shortestRouteDiversity(s, me) - shortestRouteDiversity(s, op) : 0,
   };
 }
 
@@ -199,7 +237,7 @@ export function features(
 export function evaluate(s: GameState, w: Weights = DEFAULT_WEIGHTS, myDist?: number, opDist?: number): number {
   if (s.winner !== null) return s.winner === s.turn ? WIN : -WIN;
   if (s.draw) return 0;
-  const f = features(s, myDist, opDist, w.wallThreat !== 0);
+  const f = features(s, myDist, opDist, w.wallThreat !== 0, w.routeDiversity !== 0);
   let score = 0;
   for (const k of FEATURE_NAMES) score += w[k] * f[k];
   return score;

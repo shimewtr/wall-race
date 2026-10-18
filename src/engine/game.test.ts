@@ -17,7 +17,7 @@ import {
   pawnMoves,
   shortestDistance,
 } from './game';
-import { WIN, candidateWalls, features, maxDetour, recentCells, search } from './ai';
+import { WIN, candidateWalls, features, maxDetour, recentCells, search, shortestRouteDiversity } from './ai';
 import { fitCalibration, winRate } from '../train/calibrate';
 import type { MoveRecord } from '../train/record';
 import { rngFrom } from '../train/match';
@@ -409,6 +409,26 @@ describe('特徴量 wallThreat', () => {
     const s = initialState();
     s.wallsLeft[0] = 0;
     expect(features(s, undefined, undefined, false).wallThreat).toBe(0);
+  });
+});
+
+describe('特徴量 routeDiversity', () => {
+  it('初期局面の最短ルートは両者とも 1 本', () => {
+    expect(shortestRouteDiversity(initialState(), 0)).toBe(0);
+    expect(shortestRouteDiversity(initialState(), 1)).toBe(0);
+    expect(features(initialState()).routeDiversity).toBe(0);
+  });
+
+  it('壁で迂回路が枝分かれした側を高く評価する', () => {
+    const s = place(initialState(), 3, 0, 'h');
+    expect(shortestRouteDiversity(s, 0)).toBe(3); // 8 本
+    expect(shortestRouteDiversity(s, 1)).toBe(0); // 1 本
+    expect(features(s).routeDiversity).toBe(-3); // 壁を置いた後は後手番なので、相手 − 自分
+  });
+
+  it('重みが 0 なら計算しない', () => {
+    const s = place(initialState(), 3, 0, 'h');
+    expect(features(s, undefined, undefined, false, false).routeDiversity).toBe(0);
   });
 });
 

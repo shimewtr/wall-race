@@ -176,6 +176,8 @@ const PERTURB: Record<Feature, number> = {
   lockedRace: 5,
   // 1 歩分の重みでチャンピオンに 68% 勝つことを確かめてから学習に入れた
   wallThreat: 2,
+  // compare.ts で効果を確かめるまでは学習で動かさない
+  routeDiversity: 0,
 };
 const perturbScale = (_theta: Weights, k: Feature) => PERTURB[k];
 // 4 台のランナーが同じ始点から進んだ差分を合算するため、1 台で学習していたときの大きさに抑える。
