@@ -54,3 +54,25 @@ console.log('自己時間の多い関数:');
 for (const [k, v] of [...self].sort((a, b) => b[1] - a[1]).slice(0, 20)) {
   console.log(`  ${((v / sum) * 100).toFixed(1).padStart(5)}%  ${k}`);
 }
+
+// 重い関数がどこから呼ばれているか（呼び出し元ごとの、その関数の自己時間）
+const byId = new Map(profile.nodes.map((n) => [n.id, n]));
+const parent = new Map<number, number>();
+for (const n of profile.nodes) for (const c of n.children ?? []) parent.set(c, n.id);
+const name = (id: number | undefined) => (id === undefined ? '(root)' : byId.get(id)!.callFrame.functionName || '(anonymous)');
+for (const target of ['shortestDistance', 'canStep', 'shortestPath', 'goalDistances']) {
+  const callers = new Map<string, number>();
+  for (const n of profile.nodes) {
+    if (n.callFrame.functionName !== target) continue;
+    // canStep は呼び出し元の呼び出し元まで見る（canStep 自体はほぼ BFS から呼ばれる）
+    let p = parent.get(n.id);
+    if (target === 'canStep') p = parent.get(p!);
+    const key = target === 'canStep' ? `${name(parent.get(n.id))} ← ${name(p)}` : name(p);
+    callers.set(key, (callers.get(key) ?? 0) + (hits.get(n.id) ?? 0));
+  }
+  const t = [...callers.values()].reduce((a, b) => a + b, 0);
+  console.log(`\n${target} の呼び出し元:`);
+  for (const [k, v] of [...callers].sort((a, b) => b[1] - a[1]).slice(0, 6)) {
+    console.log(`  ${((v / t) * 100).toFixed(1).padStart(5)}%  ${k}`);
+  }
+}
