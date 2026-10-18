@@ -2,7 +2,7 @@
 // 重い処理なので GitHub Actions の Experiment ワークフローから実行する。
 //
 // 例: npx tsx scripts/experiments/compare.ts --a '{"wideRoot":true}' --b '{"wideRoot":false}' --pairs 100
-//     --wa / --wb は重み（champion / initial / JSON）。省略時はどちらも champion
+//     --wa / --wb は重み（champion / initial / JSON / champion+JSON）。省略時はどちらも champion
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,7 +24,9 @@ const { values: args } = parseArgs({
 });
 
 const CHAMPION = join(import.meta.dirname, '..', '..', 'training', 'champion.json');
+// champion / initial / JSON / champion+JSON（チャンピオンの重みの一部だけ変える）
 function weights(spec: string): Weights {
+  if (spec.startsWith('champion+')) return { ...weights('champion'), ...JSON.parse(spec.slice('champion+'.length)) };
   if (spec === 'initial') return withDefaults();
   if (spec === 'champion') {
     return existsSync(CHAMPION) ? withDefaults(JSON.parse(readFileSync(CHAMPION, 'utf8')).weights) : withDefaults();

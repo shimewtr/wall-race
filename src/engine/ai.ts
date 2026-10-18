@@ -33,6 +33,7 @@ export const FEATURES = {
   center: '中央寄り（相手の中央からの横ずれ - 自分の横ずれ）',
   adjacent: '相手と隣接している（手番側は飛び越えのチャンス）',
   lockedRace: '壁が尽きて歩数勝負が確定している（相手の壁 0 で自分が先着できる +1、自分の壁 0 で相手が先着できる -1）',
+  wallThreat: '壁 1 枚で相手を遠回りさせられる最大の歩数 − 相手が壁 1 枚で自分を遠回りさせられる最大の歩数（壁が尽きた側は 0）',
 } as const;
 
 export type Feature = keyof typeof FEATURES;
@@ -49,6 +50,7 @@ export const DEFAULT_WEIGHTS: Weights = {
   center: 0,
   adjacent: 0,
   lockedRace: 0,
+  wallThreat: 0,
 };
 
 // 古い保存データに無い特徴量はデフォルト値で補う
@@ -99,8 +101,49 @@ const WIN = 100000;
 
 class Timeout extends Error {}
 
-// myDist / opDist（手番側・相手の最短歩数）が分かっていれば渡すと探索を省ける
-export function features(s: GameState, myDist = shortestDistance(s, s.turn), opDist = shortestDistance(s, (1 - s.turn) as Player)): Weights {
+// attacker が壁 1 枚で相手（victim）の最短歩数を最大何歩伸ばせるか。壁が尽きていれば 0
+export function maxDetour(s: GameState, attacker: Player, victimDist = shortestDistance(s, (1 - attacker) as Player)): number {
+  if (s.wallsLeft[attacker] <= 0) return 0;
+  const victim = (1 - attacker) as Player;
+  const path = shortestPath(s, victim);
+  const attackerPath = shortestPath(s, attacker);
+  if (!path || !attackerPath) return 0;
+  let best = 0;
+  const tryWall = (x: number, y: number, o: 'h' | 'v') => {
+    if (x < 0 || y < 0 || x >= WALL_SLOTS || y >= WALL_SLOTS || !wallFits(s, x, y, o)) return;
+    const walls = o === 'h' ? s.hWalls : s.vWalls;
+    const i = y * WALL_SLOTS + x;
+    walls[i] = 1;
+    const d = shortestDistance(s, victim);
+    // 自分の道までふさぐ壁は置けない
+    const ok = d >= 0 && (!cutsPath(attackerPath, x, y, o) || shortestDistance(s, attacker) >= 0);
+    walls[i] = 0;
+    if (ok && d - victimDist > best) best = d - victimDist;
+  };
+  for (let k = 0; k + 1 < path.length; k++) {
+    const a = path[k];
+    const b = path[k + 1];
+    if (a.x === b.x) {
+      const y = Math.min(a.y, b.y);
+      tryWall(a.x, y, 'h');
+      tryWall(a.x - 1, y, 'h');
+    } else {
+      const x = Math.min(a.x, b.x);
+      tryWall(x, a.y, 'v');
+      tryWall(x, a.y - 1, 'v');
+    }
+  }
+  return best;
+}
+
+// myDist / opDist（手番側・相手の最短歩数）が分かっていれば渡すと探索を省ける。
+// withThreat が false なら重い wallThreat は計算せず 0 にする
+export function features(
+  s: GameState,
+  myDist = shortestDistance(s, s.turn),
+  opDist = shortestDistance(s, (1 - s.turn) as Player),
+  withThreat = true,
+): Weights {
   const me = s.turn;
   const op = (1 - me) as Player;
   const my = s.pawns[me];
@@ -117,6 +160,7 @@ export function features(s: GameState, myDist = shortestDistance(s, s.turn), opD
     // 手番側は同じ歩数なら先に着く。壁が無ければ相手は邪魔できない
     lockedRace:
       (s.wallsLeft[op] === 0 && myDist <= opDist ? 1 : 0) - (s.wallsLeft[me] === 0 && opDist < myDist ? 1 : 0),
+    wallThreat: withThreat ? maxDetour(s, me, opDist) - maxDetour(s, op, myDist) : 0,
   };
 }
 
@@ -124,7 +168,7 @@ export function features(s: GameState, myDist = shortestDistance(s, s.turn), opD
 export function evaluate(s: GameState, w: Weights = DEFAULT_WEIGHTS, myDist?: number, opDist?: number): number {
   if (s.winner !== null) return s.winner === s.turn ? WIN : -WIN;
   if (s.draw) return 0;
-  const f = features(s, myDist, opDist);
+  const f = features(s, myDist, opDist, w.wallThreat !== 0);
   let score = 0;
   for (const k of FEATURE_NAMES) score += w[k] * f[k];
   return score;

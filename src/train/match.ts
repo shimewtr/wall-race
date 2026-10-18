@@ -45,7 +45,7 @@ export function playMatch(cfg: MatchConfig): Player | null {
   while (!isOver(s)) {
     const { move } = search(s, {
       ...cfg.options?.[s.turn],
-      maxDepth: cfg.depth,
+      maxDepth: cfg.options?.[s.turn]?.maxDepth ?? cfg.depth,
       weights: cfg.weights[s.turn],
       margin: cfg.margin,
       pickFromTop: pickAt(s.ply, cfg.openingPlies),

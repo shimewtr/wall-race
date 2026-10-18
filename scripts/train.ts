@@ -166,6 +166,8 @@ const PERTURB: Record<Feature, number> = {
   center: 1,
   adjacent: 2,
   lockedRace: 5,
+  // 計算が重いので、効果を確かめるまでは学習で動かさない（0 のままなら計算も省かれる）
+  wallThreat: 0,
 };
 const perturbScale = (_theta: Weights, k: Feature) => PERTURB[k];
 const learningRate = (iteration: number) => 2 / (1 + iteration / 5000) ** 0.6;

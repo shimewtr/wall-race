@@ -16,7 +16,7 @@ import {
   pawnMoves,
   shortestDistance,
 } from './game';
-import { candidateWalls, features, recentCells, search } from './ai';
+import { candidateWalls, features, maxDetour, recentCells, search } from './ai';
 import { rngFrom } from '../train/match';
 import { guideMove } from '../guide/policy';
 
@@ -352,5 +352,25 @@ describe('序盤のばらけさせ方（pickFromTop）', () => {
       }),
     );
     expect(openings.size).toBeGreaterThan(5);
+  });
+});
+
+describe('特徴量 wallThreat', () => {
+  it('初期局面では壁 1 枚で相手を 1 歩遠回りさせられる', () => {
+    expect(maxDetour(initialState(), 0)).toBe(1);
+    expect(features(initialState()).wallThreat).toBe(0); // お互い同じ
+  });
+
+  it('壁が尽きていれば 0', () => {
+    const s = initialState();
+    s.wallsLeft[0] = 0;
+    expect(maxDetour(s, 0)).toBe(0);
+    expect(features(s).wallThreat).toBe(-1); // 相手だけが 1 歩遠回りさせられる
+  });
+
+  it('重みが 0 なら計算しない（評価値は wallThreat 抜きと同じ）', () => {
+    const s = initialState();
+    s.wallsLeft[0] = 0;
+    expect(features(s, undefined, undefined, false).wallThreat).toBe(0);
   });
 });
