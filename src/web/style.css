@@ -164,6 +164,14 @@ body {
   pointer-events: none;
 }
 
+.wall.owner-0 {
+  background: color-mix(in srgb, var(--wall) 55%, var(--p0));
+}
+
+.wall.owner-1 {
+  background: color-mix(in srgb, var(--wall) 55%, var(--p1));
+}
+
 .wall.preview {
   background: var(--wall-preview);
 }
@@ -214,6 +222,14 @@ body {
   height: 16px;
   border-radius: 2px;
   background: var(--wall);
+}
+
+#bar-0 .pip {
+  background: color-mix(in srgb, var(--wall) 55%, var(--p0));
+}
+
+#bar-1 .pip {
+  background: color-mix(in srgb, var(--wall) 55%, var(--p1));
 }
 
 .pip.used {

@@ -215,14 +215,13 @@ function render() {
     }
   }
 
-  for (let y = 0; y < WALL_SLOTS; y++) {
-    for (let x = 0; x < WALL_SLOTS; x++) {
-      const i = y * WALL_SLOTS + x;
-      const isLast = last?.type === 'wall' && last.x === x && last.y === y;
-      if (s.hWalls[i]) boardEl.appendChild(wallEl(x, y, 'h', isLast && last.o === 'h' ? 'last' : ''));
-      if (s.vWalls[i]) boardEl.appendChild(wallEl(x, y, 'v', isLast && last.o === 'v' ? 'last' : ''));
-    }
-  }
+  // 壁はどちらが置いたかで色分けする（盤面には持ち主を持たないので棋譜からたどる）
+  moves.forEach((m, i) => {
+    if (m.type !== 'wall') return;
+    const owner = history[i].turn;
+    const isLast = i === moves.length - 1;
+    boardEl.appendChild(wallEl(m.x, m.y, m.o, `owner-${owner}${isLast ? ' last' : ''}`));
+  });
 
   if (pendingWall) showPreview(pendingWall.x, pendingWall.y, pendingWall.o);
 
