@@ -178,7 +178,9 @@ const PERTURB: Record<Feature, number> = {
   wallThreat: 2,
 };
 const perturbScale = (_theta: Weights, k: Feature) => PERTURB[k];
-const learningRate = (iteration: number) => 2 / (1 + iteration / 5000) ** 0.6;
+// 4 台のランナーが同じ始点から進んだ差分を合算するため、1 台で学習していたときの大きさに抑える。
+// 2 では高速化後の判定 9 回中 6 回がリセットになり、対チャンピオン勝率も 7.8〜54.5% と不安定だった。
+const learningRate = (iteration: number) => 0.5 / (1 + iteration / 5000) ** 0.6;
 const randomSeed = () => Math.floor(Math.random() * 2 ** 31);
 
 // ＋側と－側を「同じ相手・同じ乱数」で戦わせ、勝率の差で重みを動かす。
