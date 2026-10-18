@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { withDefaults } from '../../src/engine/ai';
 import type { GuideJob } from '../../src/guide/match';
-import { GUIDE_CURRENT, GUIDE_V1, GUIDE_V2, GUIDE_V3, GUIDE_V4, type GuideParams } from '../../src/guide/policy';
+import { GUIDE_ADVANCED, GUIDE_BASIC, GUIDE_CURRENT, GUIDE_V1, GUIDE_V2, GUIDE_V3, type GuideParams } from '../../src/guide/policy';
 import { GuidePool } from '../lib/pool';
 
 const { values: args } = parseArgs({
@@ -17,7 +17,7 @@ const { values: args } = parseArgs({
     // 追加で試すパラメータ（JSON。現行の手引きとの差分）
     variant: { type: 'string', multiple: true, default: [] },
     // league: 過去の全世代 × 2・3 手読みを相手にして平均を出す（特定の相手への合わせ込みを避ける）
-    opponents: { type: 'string', default: 'current' },
+    opponents: { type: 'string', default: 'league' },
   },
 });
 
@@ -30,7 +30,8 @@ const variants: Array<[string, GuideParams]> = [
   ['手引き初版', GUIDE_V1],
   ['第 2 版（相手の最善の邪魔を 1 手想定）', GUIDE_V2],
   ['第 3 版（相手も第 2 版で考えると想定）', GUIDE_V3],
-  ['第 4 版（第 2 版 + 返しのあとの遠回りの差の半分）', GUIDE_V4],
+  ['第 4 版・基本（第 2 版 + 遠回りの差の 4 分の 1）', GUIDE_BASIC],
+  ['第 4 版・上級（第 3 版 + 遠回りの差の 4 分の 1）', GUIDE_ADVANCED],
   ...args.variant!.map((v): [string, GuideParams] => [v, { ...GUIDE_CURRENT, ...JSON.parse(v) }]),
 ];
 
