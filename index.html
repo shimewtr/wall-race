@@ -43,6 +43,12 @@
             <button id="new-game" type="button">新しく始める</button>
             <button id="undo" type="button">1 手戻す</button>
           </div>
+          <!-- AI どうしの対局の再生操作 -->
+          <div class="buttons playback" id="playback" hidden>
+            <button id="step-back" type="button" aria-label="1 手戻す">⏮ 1 手戻す</button>
+            <button id="play-pause" type="button">▶ 再生</button>
+            <button id="step-forward" type="button" aria-label="1 手進める">1 手進める ⏭</button>
+          </div>
         </div>
 
         <section class="eval" id="eval" aria-live="polite">

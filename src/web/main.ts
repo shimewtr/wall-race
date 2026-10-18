@@ -36,6 +36,11 @@ let moves: Move[] = [];
 let mode: Mode = 'human-ai';
 let thinking = false;
 let requestId = 0;
+// AI どうしの対局の再生状態。paused の間は勝手に進めない。redo は「1 手戻す」で戻した手（進めるときに打ち直す）
+let paused = true;
+let redo: Move[] = [];
+// 「1 手進める」で AI に 1 手だけ考えさせているとき
+let stepping = false;
 // タッチ操作では 1 回目のタップでプレビュー、同じ場所の 2 回目で確定
 let pendingWall: { x: number; y: number; o: Orientation } | null = null;
 
@@ -43,6 +48,7 @@ const worker = new Worker(new URL('./ai.worker.ts', import.meta.url), { type: 'm
 worker.onmessage = (e: MessageEvent<AiResponse>) => {
   if (e.data.kind !== 'move' || e.data.id !== requestId) return; // 新規対局・やり直しで古くなった結果は捨てる
   thinking = false;
+  stepping = false;
   play(e.data.move);
 };
 
@@ -59,19 +65,39 @@ const current = () => history[history.length - 1];
 const isHuman = (p: Player): boolean =>
   mode === 'human-human' || (mode === 'human-ai' && p === 0) || (mode === 'ai-human' && p === 1);
 
-function play(m: Move) {
+// fromRedo: 「1 手進める」で戻した手を打ち直すとき（そのときは戻した手の続きを残す）
+function play(m: Move, fromRedo = false) {
   const s = current();
   if (!isLegal(s, m)) return;
   history.push(applyMove(s, m));
   moves.push(m);
+  if (!fromRedo) redo = [];
   pendingWall = null;
   render();
   maybeAskAi();
 }
 
+const isAiAi = () => mode === 'ai-ai';
+
 function maybeAskAi() {
   const s = current();
   if (isOver(s) || isHuman(s.turn)) return;
+  // AI どうしは一時停止中なら進めない（「1 手進める」のときだけ 1 手考える）
+  if (isAiAi() && paused && !stepping) {
+    render();
+    return;
+  }
+  // 戻した手があれば、AI に考えさせずにそれを打ち直す
+  if (isAiAi() && redo.length > 0) {
+    const id = ++requestId;
+    setTimeout(() => {
+      if (id === requestId && redo.length > 0) {
+        stepping = false;
+        play(redo.pop()!, true);
+      }
+    }, stepping ? 0 : 400);
+    return;
+  }
   thinking = true;
   render();
   const req: AiRequest = {
@@ -81,19 +107,23 @@ function maybeAskAi() {
     level: levelEl.value as Level,
     recent: recentCells(history, s.turn),
   };
-  // AI どうしの対局は見やすいように少し間を置く
-  const delay = mode === 'ai-ai' ? 400 : 0;
+  // AI どうしの対局は見やすいように少し間を置く（1 手ずつ進めるときは待たない）
+  const delay = isAiAi() && !stepping ? 400 : 0;
   setTimeout(() => {
     if (req.id === requestId) worker.postMessage(req);
   }, delay);
 }
 
-function newGame() {
+// start: AI どうしのとき、すぐに再生を始めるか（対戦形式を切り替えただけのときは始めない）
+function newGame(start = true) {
   requestId++;
   thinking = false;
+  stepping = false;
   mode = modeEl.value as Mode;
   history = [initialState()];
   moves = [];
+  redo = [];
+  paused = !start;
   pendingWall = null;
   render();
   maybeAskAi();
@@ -102,14 +132,45 @@ function newGame() {
 function undo() {
   requestId++;
   thinking = false;
+  stepping = false;
   pendingWall = null;
+  if (isAiAi()) {
+    // AI どうしは 1 手だけ戻して一時停止する。戻した手は「1 手進める」で打ち直せる
+    paused = true;
+    if (history.length > 1) {
+      history.pop();
+      redo.push(moves.pop()!);
+    }
+    render();
+    return;
+  }
   // 人間の手番に戻るまで巻き戻す
   do {
     if (history.length <= 1) break;
     history.pop();
     moves.pop();
-  } while (!isHuman(current().turn) && mode !== 'ai-ai');
+  } while (!isHuman(current().turn));
   render();
+  maybeAskAi();
+}
+
+function togglePlay() {
+  if (isOver(current())) return;
+  paused = !paused;
+  if (paused) {
+    // 考え中の手は捨てて止める
+    requestId++;
+    thinking = false;
+    render();
+  } else {
+    maybeAskAi();
+  }
+}
+
+function stepForward() {
+  if (isOver(current()) || thinking || stepping) return;
+  paused = true;
+  stepping = true;
   maybeAskAi();
 }
 
@@ -235,6 +296,7 @@ function render() {
 
   statusEl.textContent = statusText(s);
   requestEval(s);
+  renderControls(s);
 
   recordEl.replaceChildren(
     ...Array.from({ length: Math.ceil(moves.length / 2) }, (_, i) => {
@@ -324,6 +386,17 @@ showEvalEl.addEventListener('change', () => {
   requestEval(current());
 });
 
+function renderControls(s: GameState) {
+  const aiai = isAiAi();
+  $('playback').hidden = !aiai;
+  $('undo').hidden = aiai;
+  const over = isOver(s);
+  $<HTMLButtonElement>('play-pause').textContent = paused || over ? '▶ 再生' : '⏸ 一時停止';
+  $<HTMLButtonElement>('play-pause').disabled = over;
+  $<HTMLButtonElement>('step-forward').disabled = over || thinking || stepping;
+  $<HTMLButtonElement>('step-back').disabled = history.length <= 1;
+}
+
 function statusText(s: GameState): string {
   const name = (p: Player) =>
     mode === 'human-human' ? PLAYER_NAMES[p] : isHuman(p) ? 'あなた' : 'AI';
@@ -333,6 +406,7 @@ function statusText(s: GameState): string {
   }
   if (s.draw) return '引き分け（手数上限）';
   if (thinking) return 'AI が考え中…';
+  if (isAiAi() && paused) return moves.length === 0 ? '「新しく始める」か「再生」で開始' : '一時停止中';
   return mode === 'human-human' ? `${name(s.turn)}の番` : isHuman(s.turn) ? 'あなたの番' : 'AI の番';
 }
 
@@ -350,11 +424,15 @@ function statusText(s: GameState): string {
     : `${champion ? `第 ${champion.generation} 世代` : '初期設定'}の AI が ${EVAL_DEPTH} 手読みで判断した評価値（勝率への換算式はまだ無い）`;
 }
 
-$('new-game').addEventListener('click', newGame);
+$('new-game').addEventListener('click', () => newGame(true));
 $('undo').addEventListener('click', undo);
-modeEl.addEventListener('change', newGame);
+$('step-back').addEventListener('click', undo);
+$('play-pause').addEventListener('click', togglePlay);
+$('step-forward').addEventListener('click', stepForward);
+// 対戦形式を切り替えただけでは AI どうしの対局を始めない
+modeEl.addEventListener('change', () => newGame(false));
 boardEl.addEventListener('pointerleave', () => {
   if (!pendingWall) hidePreview();
 });
 
-newGame();
+newGame(false);

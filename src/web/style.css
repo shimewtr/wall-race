@@ -396,7 +396,8 @@ select {
 }
 
 button#new-game,
-button#undo {
+button#undo,
+.playback button {
   flex: 1;
   padding: 8px 12px;
   border: 1px solid var(--button);
@@ -410,9 +411,19 @@ button#new-game {
   color: var(--button-text);
 }
 
-button#undo {
+button#undo,
+.playback button {
   background: transparent;
   color: var(--text);
+}
+
+.playback button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+[hidden] {
+  display: none !important;
 }
 
 .rules {
