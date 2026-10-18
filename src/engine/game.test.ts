@@ -13,6 +13,7 @@ import {
 } from './game';
 import { candidateWalls, features, recentCells, search } from './ai';
 import { rngFrom } from '../train/match';
+import { guideMove } from '../guide/policy';
 
 const sortPos = (ps: { x: number; y: number }[]) =>
   ps.map((p) => `${p.x},${p.y}`).sort();
@@ -215,5 +216,20 @@ describe('壁の候補（wide）', () => {
       const touchesPawn = s.pawns.some((p) => (m.x === p.x || m.x === p.x - 1) && (m.y === p.y || m.y === p.y - 1));
       if (!touchesPawn) expect(shortestDistance(applyMove(s, m), 0)).toBe(8);
     }
+  });
+});
+
+describe('手引き AI', () => {
+  it('先着できる局面では前進する', () => {
+    const m = guideMove(initialState());
+    expect(m).toEqual({ type: 'pawn', x: 4, y: 7 });
+  });
+
+  it('負けている局面では相手の道をふさぐ壁を置く', () => {
+    const s = initialState();
+    s.pawns[1] = { x: 1, y: 5 }; // 相手は残り 3 歩、自分は 8 歩（別の列なので、ふさいでも自分の道は伸びない）
+    const m = guideMove(s);
+    expect(m.type).toBe('wall');
+    expect(shortestDistance(applyMove(s, m), 1)).toBeGreaterThan(3);
   });
 });
