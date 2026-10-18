@@ -11,7 +11,8 @@
     "wallsWhenClose": 67.987,
     "center": -0.248,
     "adjacent": 2.821,
-    "lockedRace": 6.222
+    "lockedRace": 6.222,
+    "wallThreat": 10
   },
   "updatedAt": "2026-10-18T07:35:24.268Z"
 }
