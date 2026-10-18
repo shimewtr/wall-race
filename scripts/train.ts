@@ -257,6 +257,13 @@ const fmt = (w: Weights) => TUNED.map((k) => `${k}=${w[k].toFixed(2)}`).join(' '
 async function runOnce(pool: PairPool, minutes: number) {
   ensureCleanTraining();
   pull();
+  // 換算式がチャンピオンの世代と合っていなければ（昇格が換算式を作る前のコードだった場合など）作り直す
+  const champ = loadChampion();
+  const cal = existsSync(CALIBRATION) ? readJson<{ generation: number }>(CALIBRATION) : null;
+  if (champ.generation > 0 && cal?.generation !== champ.generation) {
+    writeJson(CALIBRATION, await calibrate(champ.weights, champ.generation));
+    commitAndPush(`train: 第 ${champ.generation} 世代の勝率換算式を作成（${SOURCE}）`);
+  }
   const start = loadState();
   const startStep = start.stepIteration ?? start.iteration;
   const champion0 = loadChampion().weights;
