@@ -15,6 +15,7 @@ import {
   pawnMoves,
 } from '../engine/game';
 import type { AiRequest } from './ai.worker';
+import { champion } from './champion';
 
 type Mode = 'human-ai' | 'ai-human' | 'human-human' | 'ai-ai';
 
@@ -245,6 +246,10 @@ function statusText(s: GameState): string {
   if (thinking) return 'AI が考え中…';
   return mode === 'human-human' ? `${name(s.turn)}の番` : isHuman(s.turn) ? 'あなたの番' : 'AI の番';
 }
+
+$('ai-gen').textContent = champion
+  ? `AI: 自己対戦で学習した第 ${champion.generation} 世代`
+  : 'AI: 学習前の初期設定';
 
 $('new-game').addEventListener('click', newGame);
 $('undo').addEventListener('click', undo);

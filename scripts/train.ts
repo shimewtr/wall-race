@@ -68,6 +68,8 @@ interface Champion {
   source: string;
   // 前のチャンピオンに対する勝率
   gate: { score: number; pairs: number; depth: number } | null;
+  // 学習前の初期の重みに対する勝率（強くなっているかの物差し）
+  vsInitial?: number;
 }
 
 const readJson = <T>(path: string): T => JSON.parse(readFileSync(path, 'utf8')) as T;
@@ -164,11 +166,12 @@ async function spsaStep(pool: PairPool, theta: Weights, iteration: number): Prom
   return next;
 }
 
-async function gate(pool: PairPool, challenger: Weights, champion: Weights): Promise<number> {
+// a の b に対する勝率（0〜1）
+async function gate(pool: PairPool, a: Weights, b: Weights): Promise<number> {
   const scores = await pool.runAll(
     Array.from({ length: GATE_PAIRS }, (_, i) => ({
-      a: challenger,
-      b: champion,
+      a,
+      b,
       // 判定用の序盤は固定シードにして、毎回同じ条件で比べる
       opts: { depth: GATE_DEPTH, margin: MARGIN, openingPlies: OPENING_PLIES, seed: 1_000_000 + i },
     })),
@@ -210,7 +213,9 @@ async function runOnce(pool: PairPool, minutes: number) {
     const champion = loadChampion();
     const score = await gate(pool, state.theta, champion.weights);
     const promoted = score >= GATE_THRESHOLD;
-    console.log(`  チャンピオン（第 ${champion.generation} 世代）に対する勝率 ${(score * 100).toFixed(1)}%${promoted ? ' → 昇格' : ''}`);
+    const vsInitial = await gate(pool, state.theta, withDefaults());
+    const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+    console.log(`  チャンピオン（第 ${champion.generation} 世代）に対する勝率 ${pct(score)}${promoted ? ' → 昇格' : ''}、初期の重みに対する勝率 ${pct(vsInitial)}`);
 
     mkdirSync(join(DIR, 'champions'), { recursive: true });
     writeJson(STATE, state);
@@ -223,6 +228,7 @@ async function runOnce(pool: PairPool, minutes: number) {
         promotedAt: state.updatedAt,
         source: SOURCE,
         gate: { score: Math.round(score * 1000) / 1000, pairs: GATE_PAIRS, depth: GATE_DEPTH },
+        vsInitial: Math.round(vsInitial * 1000) / 1000,
       };
       writeJson(CHAMPION, next);
       writeJson(join(DIR, 'champions', `gen-${String(generation).padStart(4, '0')}.json`), next);
@@ -237,6 +243,7 @@ async function runOnce(pool: PairPool, minutes: number) {
         totalIterations: state.iteration,
         theta: state.theta,
         gateScore: Math.round(score * 1000) / 1000,
+        vsInitial: Math.round(vsInitial * 1000) / 1000,
         championGeneration: generation,
         promoted,
       })}\n`,
