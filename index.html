@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wall Race</title>
+    <link rel="stylesheet" href="/src/web/style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="board-area">
+        <div class="player-bar" id="bar-1"></div>
+        <div class="board" id="board"></div>
+        <div class="player-bar" id="bar-0"></div>
+      </section>
+
+      <aside class="panel">
+        <h1>Wall Race</h1>
+        <p class="status" id="status"></p>
+
+        <div class="controls">
+          <label>
+            対戦
+            <select id="mode">
+              <option value="human-ai">あなた（先手）vs AI</option>
+              <option value="ai-human">AI vs あなた（後手）</option>
+              <option value="human-human">2 人で対戦</option>
+              <option value="ai-ai">AI どうし</option>
+            </select>
+          </label>
+          <label>
+            AI の強さ
+            <select id="level">
+              <option value="easy">やさしい</option>
+              <option value="normal" selected>ふつう</option>
+              <option value="hard">つよい</option>
+            </select>
+          </label>
+          <div class="buttons">
+            <button id="new-game" type="button">新しく始める</button>
+            <button id="undo" type="button">1 手戻す</button>
+          </div>
+        </div>
+
+        <details class="rules" open>
+          <summary>ルール</summary>
+          <ul>
+            <li>自分のコマを、向かい側の端の列まで先に運んだら勝ち。</li>
+            <li>手番では「コマを 1 マス動かす」か「壁を 1 枚置く」のどちらか。</li>
+            <li>壁は 2 マス分の長さで、1 人 10 枚まで。重ねたり交差させたりはできない。</li>
+            <li>どちらかのゴールへの道を完全にふさぐ壁は置けない。</li>
+            <li>相手のコマが隣にいたら飛び越えられる。後ろが壁や端なら斜めに回り込める。</li>
+          </ul>
+          <p class="hint">マスをクリックでコマを移動、マスの間の溝をクリックで壁を置く（スマホは 2 回タップで確定）。</p>
+        </details>
+
+        <div class="record">
+          <h2>棋譜</h2>
+          <ol id="record"></ol>
+        </div>
+      </aside>
+    </main>
+    <script type="module" src="/src/web/main.ts"></script>
+  </body>
+</html>
