@@ -241,6 +241,20 @@ const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 const fmtMatch = (m: MatchResult) =>
   `${pct(m.avg)}（${Object.entries(m.byDepth).map(([d, v]) => `${d}手読み ${pct(v)}`).join(' / ')}）`;
 
+async function refreshCalibration() {
+  const champ = loadChampion();
+  const current = () => (existsSync(CALIBRATION) ? readJson<{ generation: number }>(CALIBRATION) : null);
+  if (champ.generation === 0 || current()?.generation === champ.generation) return;
+  const cal = await calibrate(champ.weights, champ.generation);
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    pull();
+    // 待っている間に昇格していたら、その式は使えないので次の回に任せる
+    if (loadChampion().generation !== champ.generation || current()?.generation === champ.generation) return;
+    writeJson(CALIBRATION, cal);
+    if (commitAndPush(`train: 第 ${champ.generation} 世代の勝率換算式を作成（${SOURCE}）`)) return;
+  }
+}
+
 // 新しいチャンピオンの評価値を勝率に換算する式（Web の形勢表示で使う）
 async function calibrate(weights: Weights, generation: number) {
   const records = new RecordPool(pool.size);
@@ -261,13 +275,9 @@ const fmt = (w: Weights) => TUNED.map((k) => `${k}=${w[k].toFixed(2)}`).join(' '
 async function runOnce(pool: PairPool, minutes: number) {
   ensureCleanTraining();
   pull();
-  // 換算式がチャンピオンの世代と合っていなければ（昇格が換算式を作る前のコードだった場合など）作り直す
-  const champ = loadChampion();
-  const cal = existsSync(CALIBRATION) ? readJson<{ generation: number }>(CALIBRATION) : null;
-  if (GATE && champ.generation > 0 && cal?.generation !== champ.generation) {
-    writeJson(CALIBRATION, await calibrate(champ.weights, champ.generation));
-    commitAndPush(`train: 第 ${champ.generation} 世代の勝率換算式を作成（${SOURCE}）`);
-  }
+  // 換算式がチャンピオンの世代と合っていなければ（昇格が換算式を作る前のコードだった場合など）作り直す。
+  // 判定役だけが行い、push が競合したら最新を取り込んで保存し直す（作った式を捨てない）
+  if (GATE) await refreshCalibration();
   const start = loadState();
   const startStep = start.stepIteration ?? start.iteration;
   const champion0 = loadChampion().weights;
