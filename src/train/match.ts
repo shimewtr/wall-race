@@ -25,6 +25,12 @@ export const OPENING_TOP = 3;
 // その手数で上位何手から選ぶか
 export const pickAt = (ply: number, openingPlies: number) => (ply < openingPlies ? OPENING_TOP : 1);
 
+// 序盤にばらけさせる間の読みの深さ。上位から選ぶ間は根で枝刈りできず重いので浅く読む
+// （3 手読みのままだと自己対戦全体の時間が約 2 倍になった。ばらけさせるのが目的なので厳密さは要らない）
+export const OPENING_DEPTH = 2;
+export const depthAt = (ply: number, depth: number, openingPlies: number) =>
+  ply < openingPlies ? Math.min(depth, OPENING_DEPTH) : depth;
+
 // 再現性のための軽量な乱数（mulberry32）
 export function rngFrom(seed: number): () => number {
   let a = seed >>> 0;
@@ -45,7 +51,7 @@ export function playMatch(cfg: MatchConfig): Player | null {
   while (!isOver(s)) {
     const { move } = search(s, {
       ...cfg.options?.[s.turn],
-      maxDepth: cfg.options?.[s.turn]?.maxDepth ?? cfg.depth,
+      maxDepth: depthAt(s.ply, cfg.options?.[s.turn]?.maxDepth ?? cfg.depth, cfg.openingPlies),
       weights: cfg.weights[s.turn],
       margin: cfg.margin,
       pickFromTop: pickAt(s.ply, cfg.openingPlies),

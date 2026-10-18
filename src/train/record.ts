@@ -2,7 +2,7 @@
 
 import { type Weights, candidateWalls, recentCells, search } from '../engine/ai';
 import { type GameState, type Move, type Player, applyMove, initialState, isOver, moveToString, shortestDistance } from '../engine/game';
-import { OPENING_PLIES, pickAt, rngFrom } from './match';
+import { OPENING_PLIES, depthAt, pickAt, rngFrom } from './match';
 
 export type WallKind = 'block' | 'near' | 'guard';
 
@@ -43,7 +43,7 @@ export function playRecorded(job: RecordJob): GameRecord {
     const me = s.turn;
     const op = (1 - me) as Player;
     const result = search(s, {
-      maxDepth: job.depth,
+      maxDepth: depthAt(s.ply, job.depth, OPENING_PLIES),
       weights: job.weights,
       margin: 1,
       pickFromTop: pickAt(s.ply, OPENING_PLIES),

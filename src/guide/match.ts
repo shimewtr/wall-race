@@ -2,7 +2,7 @@
 
 import { type Weights, recentCells, search } from '../engine/ai';
 import { type GameState, type Player, applyMove, initialState, isOver } from '../engine/game';
-import { OPENING_PLIES, pickAt, rngFrom } from '../train/match';
+import { OPENING_PLIES, depthAt, pickAt, rngFrom } from '../train/match';
 import { type GuideParams, guideMove } from './policy';
 
 export interface GuideJob {
@@ -24,7 +24,7 @@ export function playGuide(job: GuideJob): number {
       s.turn === job.guidePlayer
         ? guideMove(s, job.params)
         : search(s, {
-            maxDepth: job.depth,
+            maxDepth: depthAt(s.ply, job.depth, OPENING_PLIES),
             weights: job.weights,
             margin: 1,
             pickFromTop: pickAt(s.ply, OPENING_PLIES),
