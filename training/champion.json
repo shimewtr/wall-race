@@ -20,9 +20,9 @@
       "3": 0.555
     }
   },
-  "vsInitial": 0.681,
+  "vsInitial": 0.69,
   "vsInitialByDepth": {
-    "3": 0.681
+    "3": 0.69
   },
-  "gateVersion": "d3x200-o6t3"
+  "gateVersion": "d3x200-o6t3d2"
 }
