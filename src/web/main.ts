@@ -308,7 +308,7 @@ function render() {
     const who = mode === 'human-human' ? PLAYER_NAMES[p] : isHuman(p) ? 'あなた' : 'AI';
     const pips = Array.from({ length: WALLS_PER_PLAYER }, (_, i) =>
       `<span class="pip${i < s.wallsLeft[p] ? '' : ' used'}"></span>`).join('');
-    bars[p].innerHTML = `<span class="name"><span class="dot p${p}"></span>${who}</span><span class="pips" aria-label="残り壁 ${s.wallsLeft[p]} 枚">${pips}</span>`;
+    bars[p].innerHTML = `<span class="name"><span class="dot p${p}"></span>${who}</span><span class="wall-stock" aria-label="残り壁 ${s.wallsLeft[p]} 枚"><span class="pips" aria-hidden="true">${pips}</span><span class="wall-count">×${s.wallsLeft[p]}</span></span>`;
     bars[p].classList.toggle('turn', s.turn === p && !isOver(s));
   }
 

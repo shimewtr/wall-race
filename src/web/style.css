@@ -220,6 +220,18 @@ body {
   gap: 3px;
 }
 
+.wall-stock {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.wall-count {
+  min-width: 2.5ch;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 .pip {
   width: 4px;
   height: 16px;
