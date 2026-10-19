@@ -227,7 +227,9 @@ body {
 }
 
 .wall-count {
-  min-width: 2.5ch;
+  width: 3ch;
+  flex: 0 0 3ch;
+  text-align: left;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
