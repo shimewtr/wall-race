@@ -321,9 +321,6 @@ function render() {
 
 // ---- 形勢の表示 ----
 
-const playerLabel = (p: Player) =>
-  mode === 'human-human' ? PLAYER_NAMES[p] : `${PLAYER_NAMES[p]}（${isHuman(p) ? 'あなた' : 'AI'}）`;
-
 let evaluatedState: GameState | null = null;
 
 function requestEval(s: GameState) {
@@ -335,7 +332,6 @@ function requestEval(s: GameState) {
     renderEval(null);
     return;
   }
-  $('eval-text').textContent = '判断中…';
   evalWorker.postMessage({ kind: 'eval', id: ++evalId, state: s } satisfies AiRequest);
 }
 
@@ -343,23 +339,20 @@ function requestEval(s: GameState) {
 function renderEval(score: number | null) {
   const s = current();
   let blue: number; // 青から見た評価値
-  let text: string;
   if (score === null) {
     blue = s.winner === 0 ? WIN : s.winner === 1 ? -WIN : 0;
-    text = s.winner === null ? '引き分け' : `${playerLabel(s.winner)}の勝ち`;
   } else {
     blue = s.turn === 0 ? score : -score;
-    const leader = (blue > 0 ? 0 : 1) as Player;
-    if (Math.abs(blue) > WIN / 2) text = `${playerLabel(leader)}の勝ちを読み切り`;
-    else if (calibration) text = `${playerLabel(0)}の勝率 ${Math.round(blueWinRate(score, s.turn) * 100)}%`;
-    else text = `評価値 ${blue > 0 ? '+' : ''}${Math.round(blue)}（${PLAYER_NAMES[0]}から見て）`;
   }
   let pct: number;
   if (Math.abs(blue) > WIN / 2) pct = blue > 0 ? 100 : 0;
   else if (calibration && score !== null) pct = blueWinRate(score, s.turn) * 100;
   else pct = 50 + 50 * Math.tanh(blue / 100);
   $('eval-fill').style.width = `${pct}%`;
-  $('eval-text').textContent = text;
+  const bluePct = Math.round(pct);
+  $('eval-left').textContent = `${bluePct}%`;
+  $('eval-right').textContent = `${100 - bluePct}%`;
+  $('eval').setAttribute('aria-label', `青の勝率 ${bluePct}%、橙の勝率 ${100 - bluePct}%`);
 }
 
 // 手番側から見た評価値 → 青の勝率

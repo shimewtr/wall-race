@@ -236,11 +236,15 @@ body {
 .eval {
   width: 100%;
   padding: 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
 }
 
 .eval-bar {
   position: relative;
+  flex: 1;
   height: 10px;
   margin-top: 0;
   border-radius: 5px;
@@ -266,11 +270,15 @@ body {
   background: var(--surface);
 }
 
-.eval-text {
-  margin: 3px 0 0;
-  font-size: 15px;
+.eval-pct {
+  min-width: 3ch;
+  font-size: 16px;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1;
+}
+
+.eval-pct:last-child {
+  text-align: right;
 }
 
 .metrics {
@@ -410,11 +418,6 @@ button#undo,
 
   .eval-bar {
     margin-top: 4px;
-  }
-
-  .eval-text {
-    margin: 3px 0 0;
-    line-height: 1.35;
   }
 
   .player-bar {
