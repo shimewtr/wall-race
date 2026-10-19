@@ -33,6 +33,10 @@ export interface GuideParams {
   threatValue?: number;
   // 相手の最短経路をふさぐ壁だけでなく、自分の経路を守る壁やコマ周りの壁も候補にする
   wideWalls?: boolean;
+  // 先読みの評価で、壁を 1 枚使うことに課す歩数換算のコスト
+  wallCost?: number;
+  // 相手の壁 1 枚でこの歩数以上遠回りさせられるときだけ、脅威を減らす守りの壁を候補にする
+  guardThreatAtLeast?: number;
 }
 
 export const GUIDE_V1: GuideParams = {
@@ -67,8 +71,7 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number): Move {
   const me = s.turn;
   const op = (1 - me) as Player;
   // 相手がまだ遠いうちは壁を候補に入れない（温存）
-  const walls =
-    shortestDistance(s, op) <= params.saveWallsWhileOpponentFarther ? candidateWalls(s, params.wideWalls ?? false) : [];
+  const walls = shortestDistance(s, op) <= params.saveWallsWhileOpponentFarther ? guideWalls(s, params) : [];
   const candidates: Move[] = [...pawnMoves(s).map((p): Move => ({ type: 'pawn', x: p.x, y: p.y })), ...walls];
   let best = candidates[0];
   let bestScore = -Infinity;
@@ -88,6 +91,7 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number): Move {
         if (params.threatValue) {
           score += params.threatValue * (maxDetour(reply, me) - maxDetour(reply, (1 - me) as Player));
         }
+        if (m.type === 'wall') score -= params.wallCost ?? 0;
       }
     }
     if (score > bestScore) {
@@ -96,6 +100,24 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number): Move {
     }
   }
   return best;
+}
+
+function guideWalls(s: GameState, params: GuideParams): Move[] {
+  const base = candidateWalls(s, params.wideWalls ?? false);
+  if (!params.guardThreatAtLeast || params.wideWalls) return base;
+
+  const me = s.turn;
+  const op = (1 - me) as Player;
+  const threat = maxDetour(s, op);
+  if (threat < params.guardThreatAtLeast) return base;
+  const myDist = shortestDistance(s, me);
+  const names = new Set(base.map((m) => JSON.stringify(m)));
+  const guards = candidateWalls(s, true).filter((m) => {
+    if (names.has(JSON.stringify(m))) return false;
+    const after = applyMove(s, m);
+    return shortestDistance(after, me) === myDist && maxDetour(after, op) < threat;
+  });
+  return [...base, ...guards];
 }
 
 function simpleMove(s: GameState, params: GuideParams): Move {
@@ -113,7 +135,7 @@ function simpleMove(s: GameState, params: GuideParams): Move {
   if (wantWall) {
     let best: Move | null = null;
     let bestGain = -Infinity;
-    for (const w of candidateWalls(s, params.wideWalls ?? false)) {
+    for (const w of guideWalls(s, params)) {
       const n = applyMove(s, w);
       const gain = shortestDistance(n, op) - opDist - (shortestDistance(n, me) - myDist);
       if (gain > bestGain) {
