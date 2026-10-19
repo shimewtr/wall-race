@@ -91,7 +91,7 @@ export function discoverGame(job: DiscoveryJob): DiscoveryGame {
     const currentDepth = depthAt(s.ply, job.depth, OPENING_PLIES);
     let move: Move;
     if (s.turn === job.guidePlayer) {
-      const guide = guideMove(s, params);
+      const guide = guideMove(s, params, recentCells(history, s.turn));
       const expert = search(s, {
         maxDepth: currentDepth,
         weights: job.weights,

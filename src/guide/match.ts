@@ -22,7 +22,7 @@ export function playGuide(job: GuideJob): number {
   while (!isOver(s)) {
     const m =
       s.turn === job.guidePlayer
-        ? guideMove(s, job.params)
+        ? guideMove(s, job.params, recentCells(history, s.turn))
         : search(s, {
             maxDepth: depthAt(s.ply, job.depth, OPENING_PLIES),
             weights: job.weights,

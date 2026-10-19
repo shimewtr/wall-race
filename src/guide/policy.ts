@@ -15,7 +15,7 @@
 // 第 3 版（lookahead: 2）: 相手も第 2 版と同じように考えて返してくる、と想定する。
 
 import { candidateWalls, maxDetour } from '../engine/ai';
-import { type GameState, type Move, type Player, applyMove, pawnMoves, shortestDistance } from '../engine/game';
+import { type GameState, type Move, type Player, type Pos, applyMove, pawnMoves, shortestDistance } from '../engine/game';
 
 export interface GuideParams {
   // 壁を置くのは「相手の増加 − 自分の増加」がこの歩数以上のときだけ
@@ -37,6 +37,8 @@ export interface GuideParams {
   wallCost?: number;
   // 最後の壁を使い切るときだけ追加で課す歩数換算のコスト
   lastWallCost?: number;
+  // 直近にいたマスへ戻る手に課す歩数換算のコスト（往復を避ける）
+  backtrackCost?: number;
   // 相手の壁 1 枚でこの歩数以上遠回りさせられるときだけ、脅威を減らす守りの壁を候補にする
   guardThreatAtLeast?: number;
 }
@@ -71,12 +73,12 @@ export const GUIDE_CURRENT: GuideParams = GUIDE_V6;
 // 手番側から見た歩数の差（0 以上なら手番側が先着）
 const lead = (s: GameState) => shortestDistance(s, (1 - s.turn) as Player) - shortestDistance(s, s.turn);
 
-export function guideMove(s: GameState, params: GuideParams = GUIDE_V1): Move {
-  if (params.lookahead) return lookaheadMove(s, params, params.lookahead);
-  return simpleMove(s, params);
+export function guideMove(s: GameState, params: GuideParams = GUIDE_V1, recent: Pos[] = []): Move {
+  if (params.lookahead) return lookaheadMove(s, params, params.lookahead, recent);
+  return simpleMove(s, params, recent);
 }
 
-function lookaheadMove(s: GameState, params: GuideParams, level: number): Move {
+function lookaheadMove(s: GameState, params: GuideParams, level: number, recent: Pos[]): Move {
   const me = s.turn;
   const op = (1 - me) as Player;
   // 相手がまだ遠いうちは壁を候補に入れない（温存）
@@ -103,6 +105,8 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number): Move {
         if (m.type === 'wall') {
           score -= params.wallCost ?? 0;
           if (s.wallsLeft[me] === 1) score -= params.lastWallCost ?? 0;
+        } else if (recent.some((p) => p.x === m.x && p.y === m.y)) {
+          score -= params.backtrackCost ?? 0;
         }
       }
     }
@@ -132,7 +136,7 @@ function guideWalls(s: GameState, params: GuideParams): Move[] {
   return [...base, ...guards];
 }
 
-function simpleMove(s: GameState, params: GuideParams): Move {
+function simpleMove(s: GameState, params: GuideParams, recent: Pos[]): Move {
   const me = s.turn;
   const op = (1 - me) as Player;
   const myDist = shortestDistance(s, me);
@@ -160,7 +164,8 @@ function simpleMove(s: GameState, params: GuideParams): Move {
 
   const options = pawnMoves(s).map((p) => {
     const m: Move = { type: 'pawn', x: p.x, y: p.y };
-    return { m, d: shortestDistance(applyMove(s, m), me), c: Math.abs(p.x - 4) };
+    const backtrack = recent.some((r) => r.x === p.x && r.y === p.y) ? (params.backtrackCost ?? 0) : 0;
+    return { m, d: shortestDistance(applyMove(s, m), me) + backtrack, c: Math.abs(p.x - 4) };
   });
   options.sort((a, b) => a.d - b.d || a.c - b.c);
   return options[0].m;

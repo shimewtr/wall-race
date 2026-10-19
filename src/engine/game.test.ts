@@ -259,6 +259,15 @@ describe('手引き AI', () => {
     expect(moveToString(guideMove(s, GUIDE_V5))).toBe('b8h');
     expect(guideMove(s, GUIDE_CURRENT).type).toBe('pawn');
   });
+
+  it('戻る手にコストを設定すれば、同じ場所の往復を避ける', () => {
+    const moves = 'f1 e8 f2 e7 e2 e6 e3 e5 d3 e4 d4 e3 d5 e2 d1h d6h e2v e3 c5 b5h b5 a4v c5 c4v c4 a3h c3 d3h c2 b1h b2 f1h a2 h6h a1 d3 c2h f6h b1 e3 c1 e2 d1 e3 e1 e2 f1 e3 g1 e2 h1 e3 h2 e2 h3 e3 h4 e2 g4 e3 g5 e2 f5 e3 e5 e2 d5';
+    const history = [initialState()];
+    for (const text of moves.split(' ')) history.push(applyMove(history.at(-1)!, moveFromString(text)!));
+    const s = history.at(-1)!;
+    expect(moveToString(guideMove(s, GUIDE_CURRENT))).toBe('e3');
+    expect(moveToString(guideMove(s, { ...GUIDE_CURRENT, backtrackCost: 1 }, recentCells(history, s.turn)))).not.toBe('e3');
+  });
 });
 
 describe('高速化した処理が元の処理と一致する', () => {
