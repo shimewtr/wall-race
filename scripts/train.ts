@@ -77,6 +77,8 @@ interface State {
   iteration: number;
   // 学習率の減衰に使う反復数（リセットで 0 に戻る）
   stepIteration?: number;
+  // 比較実験で有効だった新特徴量の初期値を、既存の状態へ一度だけ入れるための版
+  featureSeedVersion?: number;
   pairs: number;
   theta: Weights;
   updatedAt: string;
@@ -101,12 +103,28 @@ const writeJson = (path: string, v: unknown) => writeFileSync(path, `${JSON.stri
 const round = (w: Weights): Weights =>
   Object.fromEntries(FEATURE_NAMES.map((k) => [k, Math.round(w[k] * 1000) / 1000])) as Weights;
 
+const FEATURE_SEED_VERSION = 1;
+// routeDiversity=5 はチャンピオンに 58.5%（400 局）。新しいチャンピオンに入るまではリセット後も維持する。
+const trainingBaseline = (w: Partial<Weights>): Weights => {
+  const baseline = withDefaults(w);
+  if (baseline.routeDiversity === 0) baseline.routeDiversity = 5;
+  return baseline;
+};
+
 function loadState(): State {
   if (existsSync(STATE)) {
     const s = readJson<State>(STATE);
-    return { ...s, theta: withDefaults(s.theta) };
+    const theta = withDefaults(s.theta);
+    if ((s.featureSeedVersion ?? 0) < FEATURE_SEED_VERSION) theta.routeDiversity = 5;
+    return { ...s, featureSeedVersion: FEATURE_SEED_VERSION, theta };
   }
-  return { iteration: 0, pairs: 0, theta: withDefaults(), updatedAt: new Date().toISOString() };
+  return {
+    iteration: 0,
+    featureSeedVersion: FEATURE_SEED_VERSION,
+    pairs: 0,
+    theta: trainingBaseline(withDefaults()),
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 function loadChampion(): Champion {
@@ -181,8 +199,8 @@ const PERTURB: Record<Feature, number> = {
 };
 const perturbScale = (_theta: Weights, k: Feature) => PERTURB[k];
 // 4 台のランナーが同じ始点から進んだ差分を合算するため、1 台で学習していたときの大きさに抑える。
-// 2 では高速化後の判定 9 回中 6 回がリセットになり、対チャンピオン勝率も 7.8〜54.5% と不安定だった。
-const learningRate = (iteration: number) => 0.5 / (1 + iteration / 5000) ** 0.6;
+// 0.5 でも変更後の判定 3 回中 2 回リセットしたため、さらに半分に下げる。
+const learningRate = (iteration: number) => 0.25 / (1 + iteration / 5000) ** 0.6;
 const randomSeed = () => Math.floor(Math.random() * 2 ** 31);
 
 // ＋側と－側を「同じ相手・同じ乱数」で戦わせ、勝率の差で重みを動かす。
@@ -307,6 +325,7 @@ async function runOnce(pool: PairPool, minutes: number) {
     const state: State = {
       iteration: latest.iteration + iters,
       stepIteration: (latest.stepIteration ?? latest.iteration) + iters,
+      featureSeedVersion: FEATURE_SEED_VERSION,
       pairs: latest.pairs + iters * PAIRS_PER_ITER * 2,
       theta: round(merged),
       updatedAt: new Date().toISOString(),
@@ -339,7 +358,7 @@ async function runOnce(pool: PairPool, minutes: number) {
       reset = !promoted && score < RESET_BELOW;
       if (reset) {
         console.log('  チャンピオンに大きく負け越したので、チャンピオンの重みから学習し直します');
-        state.theta = champion.weights;
+        state.theta = trainingBaseline(champion.weights);
         state.stepIteration = 0;
       }
     }
