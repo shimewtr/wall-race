@@ -2,6 +2,7 @@
 
 このプロジェクトの目的・現状・次にやること・運用上の約束ごとを 1 か所にまとめたもの。
 作業を再開するときはまずこのファイルを読む（末尾に再開用のプロンプトがある）。
+AI 学習の経緯と詳しい継続手順は [training.md](training.md) にまとめている。
 
 ## 目的
 
@@ -79,6 +80,7 @@
 | `src/engine/ai.ts` | 探索と評価（特徴量 `FEATURES`）。`wallThreat` の計算とキャッシュもここ |
 | `src/guide/policy.ts` | 手引き AI（`GUIDE_BASIC` / `GUIDE_CURRENT`）。手引きを変えたらここも合わせる |
 | `scripts/train.ts` | 学習（SPSA・昇格判定・勝率換算式の作成） |
+| `docs/training.md` | 学習の経緯・Actions運用・実験から採用までの手順・学習再開用プロンプト |
 | `scripts/experiments/` | Actions で回す実験（`compare` / `guide` / `analyze` / `calibrate` / `bench` / `profile` / `spsa-speed`） |
 | `training/` | 学習の状態・チャンピオン・履歴・勝率換算式（学習が自動で更新する。手で書き換えない） |
 | `docs/guide.md` | 人間向けの手引き |
@@ -89,7 +91,7 @@
 
 ```text
 ~/ghq/github.com/shimewtr/wall-race で作業を再開したい。
-まず docs/roadmap.md、docs/guide.md、README.md を読んで、目的・現状・次にやること・運用上の約束ごとを把握して。
+まず docs/roadmap.md、docs/training.md、docs/guide.md、README.md を読んで、目的・現状・これまでの学習・次にやること・運用上の約束ごとを把握して。
 そのうえで `git pull` して `npm run status` と `gh run list --limit 10` で学習と Actions の最新の状況を確認し、
 roadmap.md の「現状」から変わったところと、「次にやること」のうち今やるべきものを日本語で短く報告して。
 

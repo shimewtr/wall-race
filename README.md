@@ -6,6 +6,7 @@
 
 人間向けの考え方の手順は [docs/guide.md](docs/guide.md)（自己対戦の分析と、手引きどおりに打つ AI の成績から作っている）。
 進め方・現状・次にやること・作業を再開するときのプロンプトは [docs/roadmap.md](docs/roadmap.md)。
+AI 学習の経緯・運用手順・別セッションで学習を継続するための文章は [docs/training.md](docs/training.md)。
 
 ## 遊び方
 
@@ -56,6 +57,8 @@ npm run arena -- --games 20 --a '{"maxDepth":3}' --b '{"maxDepth":2,"noise":2}'
 `--a` / `--b` には `SearchOptions`（`maxDepth`, `timeMs`, `weights`, `noise`）を JSON で渡す。
 
 ## 学習
+
+このリポジトリの継続学習は GitHub Actions の Train ワークフローで行う。詳しい運用は [docs/training.md](docs/training.md) を参照。以下は学習スクリプトを直接実行できる環境向けのコマンドで、手元の Mac では重い学習を実行しない。
 
 ```sh
 npm run train -- --minutes 30            # 30 分回して結果を push
