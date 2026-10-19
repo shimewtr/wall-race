@@ -192,8 +192,6 @@ const PERTURB: Record<Feature, number> = {
   center: 1,
   adjacent: 2,
   lockedRace: 5,
-  // 比較実験で有効性を確認するまでは学習で動かさない
-  wallReserve: 0,
   // 1 歩分の重みでチャンピオンに 68% 勝つことを確かめてから学習に入れた
   wallThreat: 2,
   // 重み 5 でチャンピオンに 58.5% 勝つことを確かめてから学習に入れた
