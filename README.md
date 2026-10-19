@@ -1,5 +1,7 @@
 # Wall Race
 
+[GitHub Pages で遊ぶ](https://shimewtr.github.io/wall-race/)
+
 9×9 の盤で、壁を置いて相手の道をふさぎながら、自分のコマを向かい側の端まで先に運ぶ 2 人用ボードゲーム。ブラウザで遊べる。
 
 人間向けの考え方の手順は [docs/guide.md](docs/guide.md)（自己対戦の分析と、手引きどおりに打つ AI の成績から作っている）。
