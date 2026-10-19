@@ -9,6 +9,7 @@
   <body>
     <main class="app">
       <section class="board-area">
+        <p class="result" id="result" aria-live="polite" hidden></p>
         <section class="eval" id="eval" aria-live="polite">
           <span class="eval-pct" id="eval-left">50%</span>
           <div class="eval-bar"><div class="eval-fill" id="eval-fill"></div></div>
@@ -20,8 +21,6 @@
       </section>
 
       <aside class="panel">
-        <p class="status" id="status"></p>
-
         <div class="controls">
           <fieldset>
             <legend>対戦形式</legend>

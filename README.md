@@ -16,6 +16,9 @@ npm run dev
 
 - マスをクリック: コマを動かす（緑のマスが移動先）
 - マスの間の溝をクリック: 壁を置く（スマホは 2 回タップで確定）
+- `vs AI` は先手・後手を選べ、どちらでも人間側を盤面の手前に表示する
+- `対戦` は人間どうし、`観戦` は AI どうし。再生操作は使えない対戦形式では無効になる
+- 盤面の上に青・橙それぞれの推定勝率を表示し、決着時は勝者の色と `WIN` を表示する
 
 ### ルール
 
@@ -86,7 +89,7 @@ GitHub Actions では Train ワークフローが 4 台並列で学習し、終�
 
 ## 実験
 
-重い比較は Experiment ワークフローで Actions 上で回す（`scripts/experiments/` のスクリプトを実行し、結果は実行のサマリーに出る）。
+重い比較は Experiment ワークフローで Actions 上で回す（`scripts/experiments/` の `compare` / `guide` / `discover` / `analyze` / `bench` / `profile` などを実行し、結果は実行のサマリーに出る）。
 
 ```sh
 gh workflow run Experiment -f script=compare -f args="--a '{\"wideRoot\":true}' --b '{\"wideRoot\":false}' --pairs 100"

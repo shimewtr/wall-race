@@ -23,7 +23,8 @@ type Mode = 'human-ai' | 'ai-human' | 'human-human' | 'ai-ai';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const boardEl = $<HTMLDivElement>('board');
-const statusEl = $<HTMLParagraphElement>('status');
+const evalEl = $<HTMLElement>('eval');
+const resultEl = $<HTMLParagraphElement>('result');
 const bars = [$<HTMLDivElement>('bar-0'), $<HTMLDivElement>('bar-1')];
 
 const PLAYER_NAMES = ['青', '橙'];
@@ -312,7 +313,10 @@ function render() {
     bars[p].classList.toggle('turn', s.turn === p && !isOver(s));
   }
 
-  statusEl.textContent = statusText(s);
+  const over = isOver(s);
+  resultEl.hidden = !over;
+  evalEl.hidden = over;
+  resultEl.textContent = s.winner === 0 ? '🔵 WIN' : s.winner === 1 ? '🟠 WIN' : over ? 'DRAW' : '';
   requestEval(s);
   renderControls(s);
 
@@ -388,19 +392,6 @@ function renderControls(s: GameState) {
   $<HTMLButtonElement>('play-pause').disabled = !aiai || over || stepping;
   $<HTMLButtonElement>('step-forward').disabled = !aiai || over || thinking || stepping;
   $<HTMLButtonElement>('step-back').disabled = thinking || stepping || history.length <= 1;
-}
-
-function statusText(s: GameState): string {
-  const name = (p: Player) =>
-    mode === 'human-human' ? PLAYER_NAMES[p] : isHuman(p) ? 'あなた' : 'AI';
-  if (s.winner !== null) {
-    if (mode === 'human-ai' || mode === 'ai-human') return isHuman(s.winner) ? 'あなたの勝ち！' : 'AI の勝ち';
-    return `${name(s.winner)}の勝ち`;
-  }
-  if (s.draw) return '引き分け（手数上限）';
-  if (thinking) return 'AI が考え中…';
-  if (isAiAi() && paused) return moves.length === 0 ? '' : '一時停止中';
-  return mode === 'human-human' ? `${name(s.turn)}の番` : isHuman(s.turn) ? 'あなたの番' : 'AI の番';
 }
 
 {

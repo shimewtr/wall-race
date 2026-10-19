@@ -21,7 +21,7 @@ import { WIN, candidateWalls, features, maxDetour, recentCells, search, shortest
 import { fitCalibration, winRate } from '../train/calibrate';
 import type { MoveRecord } from '../train/record';
 import { rngFrom } from '../train/match';
-import { GUIDE_ADVANCED, GUIDE_CURRENT, guideMove } from '../guide/policy';
+import { GUIDE_ADVANCED, GUIDE_CURRENT, GUIDE_V5, guideMove } from '../guide/policy';
 
 const sortPos = (ps: { x: number; y: number }[]) =>
   ps.map((p) => `${p.x},${p.y}`).sort();
@@ -256,8 +256,8 @@ describe('手引き AI', () => {
     let s = initialState();
     for (const text of moves.split(' ')) s = applyMove(s, moveFromString(text)!);
     expect(s.wallsLeft[s.turn]).toBe(1);
-    expect(moveToString(guideMove(s, GUIDE_CURRENT))).toBe('b8h');
-    expect(guideMove(s, { ...GUIDE_CURRENT, lastWallCost: 4 }).type).toBe('pawn');
+    expect(moveToString(guideMove(s, GUIDE_V5))).toBe('b8h');
+    expect(guideMove(s, GUIDE_CURRENT).type).toBe('pawn');
   });
 });
 

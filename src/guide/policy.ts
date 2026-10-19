@@ -63,7 +63,10 @@ export const GUIDE_ADVANCED: GuideParams = { ...GUIDE_V3, threatValue: 0.25 };
 // 壁を置きすぎる弱点を 0.5 歩のコストで抑え、4 歩以上の壁脅威があるときだけ守りの壁も読む。
 // 第 1〜7 世代 × 2・3 手読みへの平均勝率は、第 4 版 47.8% → 第 5 版 55.4%。
 export const GUIDE_V5: GuideParams = { ...GUIDE_ADVANCED, wallCost: 0.5, guardThreatAtLeast: 4 };
-export const GUIDE_CURRENT: GuideParams = GUIDE_V5;
+// 第 6 版: 第 5 版の敗戦300局を再分析し、最後の壁を使い切る失敗が多いことから追加した。
+// 最後の1枚に2歩分の追加コストを付け、全世代リーグ平均 55.4% → 66.8%。
+export const GUIDE_V6: GuideParams = { ...GUIDE_V5, lastWallCost: 2 };
+export const GUIDE_CURRENT: GuideParams = GUIDE_V6;
 
 // 手番側から見た歩数の差（0 以上なら手番側が先着）
 const lead = (s: GameState) => shortestDistance(s, (1 - s.turn) as Player) - shortestDistance(s, s.turn);
