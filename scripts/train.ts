@@ -197,10 +197,14 @@ const PERTURB: Record<Feature, number> = {
   // 重み 5 でチャンピオンに 58.5% 勝つことを確かめてから学習に入れた
   routeDiversity: 2,
 };
-const perturbScale = (_theta: Weights, k: Feature) => PERTURB[k];
+// 学習率 0.25 でも直近 9 判定中 3 回リセットしたため、基準値の半分で安定性を比較する。
+// 履歴にも倍率を保存し、6 判定後にリセット回数と勝率の振れを従来条件と比べる。
+const PERTURB_MULTIPLIER = 0.5;
+const perturbScale = (_theta: Weights, k: Feature) => PERTURB[k] * PERTURB_MULTIPLIER;
 // 4 台のランナーが同じ始点から進んだ差分を合算するため、1 台で学習していたときの大きさに抑える。
 // 0.5 でも変更後の判定 3 回中 2 回リセットしたため、さらに半分に下げる。
-const learningRate = (iteration: number) => 0.25 / (1 + iteration / 5000) ** 0.6;
+const LEARNING_RATE_BASE = 0.25;
+const learningRate = (iteration: number) => LEARNING_RATE_BASE / (1 + iteration / 5000) ** 0.6;
 const randomSeed = () => Math.floor(Math.random() * 2 ** 31);
 
 // ＋側と－側を「同じ相手・同じ乱数」で戦わせ、勝率の差で重みを動かす。
@@ -308,7 +312,9 @@ async function runOnce(pool: PairPool, minutes: number) {
   let iters = 0;
   const deadline = Date.now() + minutes * 60_000;
   const startedAt = new Date().toISOString();
-  console.log(`[${SOURCE}] 開始 iteration=${start.iteration} ${fmt(theta)}`);
+  console.log(
+    `[${SOURCE}] 開始 iteration=${start.iteration} perturb=${PERTURB_MULTIPLIER} learningRate=${LEARNING_RATE_BASE} ${fmt(theta)}`,
+  );
 
   while (Date.now() < deadline) {
     theta = await spsaStep(pool, theta, startStep + iters, champion0, league);
@@ -398,6 +404,8 @@ async function runOnce(pool: PairPool, minutes: number) {
         championGeneration: generation,
         promoted,
         reset,
+        perturbMultiplier: PERTURB_MULTIPLIER,
+        learningRateBase: LEARNING_RATE_BASE,
       })}\n`,
     );
 
