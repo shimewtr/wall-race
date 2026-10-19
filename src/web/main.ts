@@ -321,23 +321,13 @@ function render() {
 
 // ---- 形勢の表示 ----
 
-const evalEl = $<HTMLElement>('eval');
-const showEvalEl = $<HTMLInputElement>('show-eval');
-const EVAL_KEY = 'wall-race:show-eval';
-try {
-  showEvalEl.checked = localStorage.getItem(EVAL_KEY) !== 'off';
-} catch {
-  // 保存できない環境では毎回表示する
-}
-
 const playerLabel = (p: Player) =>
   mode === 'human-human' ? PLAYER_NAMES[p] : `${PLAYER_NAMES[p]}（${isHuman(p) ? 'あなた' : 'AI'}）`;
 
 let evaluatedState: GameState | null = null;
 
 function requestEval(s: GameState) {
-  evalEl.classList.toggle('hidden', !showEvalEl.checked);
-  if (!showEvalEl.checked || s === evaluatedState) return;
+  if (s === evaluatedState) return;
   evaluatedState = s;
   renderBreakdown(s);
   if (isOver(s)) {
@@ -386,16 +376,6 @@ function renderBreakdown(s: GameState) {
     <tr><th>残りの壁</th>${cells((p) => `${s.wallsLeft[p]} 枚`)}</tr>
     <tr><th>壁 1 枚で相手を遠回りさせられる歩数</th>${cells((p) => (s.wallsLeft[p] > 0 ? `${maxDetour(s, p)} 歩` : '—'))}</tr>`;
 }
-
-showEvalEl.addEventListener('change', () => {
-  try {
-    localStorage.setItem(EVAL_KEY, showEvalEl.checked ? 'on' : 'off');
-  } catch {
-    // 保存できなくても表示の切り替えはできる
-  }
-  evaluatedState = null;
-  requestEval(current());
-});
 
 function renderControls(s: GameState) {
   const aiai = isAiAi();

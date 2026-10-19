@@ -68,7 +68,7 @@ body {
 /* ---- 盤面 ---- */
 
 .board-area {
-  --size: min(92vw, 560px, calc(100svh - 188px));
+  --size: min(92vw, 560px, calc(100svh - 150px));
   --gap: calc(var(--size) * 0.025);
   --cell-size: calc((var(--size) - 8 * var(--gap)) / 9);
   display: flex;
@@ -235,38 +235,14 @@ body {
 
 .eval {
   width: 100%;
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
+  padding: 0 2px;
   font-size: 13px;
-}
-
-.eval-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.eval-head h2 {
-  margin: 0;
-}
-
-.toggle {
-  flex-direction: row;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-}
-
-.eval.hidden .eval-body {
-  display: none;
 }
 
 .eval-bar {
   position: relative;
   height: 10px;
-  margin-top: 8px;
+  margin-top: 0;
   border-radius: 5px;
   background: var(--p1);
   overflow: hidden;
@@ -291,9 +267,18 @@ body {
 }
 
 .eval-text {
-  margin: 6px 0 4px;
+  margin: 3px 0 0;
   font-size: 15px;
   font-weight: 600;
+  line-height: 1.35;
+}
+
+.metrics {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 13px;
 }
 
 .eval-table {
@@ -415,12 +400,12 @@ button#undo,
   }
 
   .board-area {
-    --size: min(calc(100vw - 16px), calc(100svh - 174px));
+    --size: min(calc(100vw - 16px), calc(100svh - 140px));
     gap: 6px;
   }
 
   .eval {
-    padding: 6px 10px;
+    padding: 0 2px;
   }
 
   .eval-bar {
@@ -430,11 +415,6 @@ button#undo,
   .eval-text {
     margin: 3px 0 0;
     line-height: 1.35;
-  }
-
-  .eval-table,
-  .eval-note {
-    display: none;
   }
 
   .player-bar {
