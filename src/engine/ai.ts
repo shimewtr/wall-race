@@ -35,6 +35,7 @@ export const FEATURES = {
   center: '中央寄り（相手の中央からの横ずれ - 自分の横ずれ）',
   adjacent: '相手と隣接している（手番側は飛び越えのチャンス）',
   lockedRace: '壁が尽きて歩数勝負が確定している（相手の壁 0 で自分が先着できる +1、自分の壁 0 で相手が先着できる -1）',
+  wallReserve: '最後の壁を残している価値（自分だけ壁が残っていれば +1、相手だけなら -1）',
   wallThreat: '壁 1 枚で相手を遠回りさせられる最大の歩数 − 相手が壁 1 枚で自分を遠回りさせられる最大の歩数（壁が尽きた側は 0）',
   routeDiversity: '最短ルートの本数の差（自分 − 相手。2 倍ごとに +1、16 本で頭打ち）',
 } as const;
@@ -53,6 +54,7 @@ export const DEFAULT_WEIGHTS: Weights = {
   center: 0,
   adjacent: 0,
   lockedRace: 0,
+  wallReserve: 0,
   wallThreat: 0,
   routeDiversity: 0,
 };
@@ -253,6 +255,7 @@ export function features(
     // 手番側は同じ歩数なら先に着く。壁が無ければ相手は邪魔できない
     lockedRace:
       (s.wallsLeft[op] === 0 && myDist <= opDist ? 1 : 0) - (s.wallsLeft[me] === 0 && opDist < myDist ? 1 : 0),
+    wallReserve: (s.wallsLeft[me] > 0 ? 1 : 0) - (s.wallsLeft[op] > 0 ? 1 : 0),
     wallThreat: withThreat ? maxDetour(s, me, opDist) - maxDetour(s, op, myDist) : 0,
     routeDiversity: withRouteDiversity ? shortestRouteDiversity(s, me) - shortestRouteDiversity(s, op) : 0,
   };

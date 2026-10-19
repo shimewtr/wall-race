@@ -204,6 +204,20 @@ describe('特徴量 lockedRace', () => {
   });
 });
 
+describe('特徴量 wallReserve', () => {
+  it('どちらにも壁が残っていれば 0', () => {
+    expect(features(initialState()).wallReserve).toBe(0);
+  });
+
+  it('自分だけに壁が残っていれば +1、相手だけなら -1', () => {
+    const mine = initialState();
+    mine.wallsLeft[1] = 0;
+    expect(features(mine).wallReserve).toBe(1);
+    mine.turn = 1;
+    expect(features(mine).wallReserve).toBe(-1);
+  });
+});
+
 describe('壁の候補（wide）', () => {
   const key = (m: { x: number; y: number; o?: string }) => `${m.x},${m.y},${m.o}`;
 
