@@ -51,13 +51,17 @@ export const GUIDE_V3: GuideParams = { ...GUIDE_V1, lookahead: 2 };
 // 第 4 版の候補だったもの（遠回りの差の半分）。第 4 世代には強かったが、全世代を相手にすると第 2 版より弱かった
 export const GUIDE_V4: GuideParams = { ...GUIDE_V2, threatValue: 0.5 };
 
-// docs/guide.md（第 4 版）に書いている手順。全世代 × 2・3 手読みを相手にした平均勝率で選んだ
+// docs/guide.md の第 4 版。全世代 × 2・3 手読みを相手にした平均勝率で選んだ
 // - 基本: 第 2 版 + 返しのあとの「壁 1 枚で遠回りさせられる歩数」の差の 4 分の 1（平均 42.6%）
 // - 上級: さらに「相手も基本の手順で考えて返してくる」と一段深く想像する（平均 49.0%）
 // 壁の枚数を歩数に換算して足す版（wallValue）は、強い相手への勝率が下がったので採用していない
 export const GUIDE_BASIC: GuideParams = { ...GUIDE_V2, threatValue: 0.25 };
 export const GUIDE_ADVANCED: GuideParams = { ...GUIDE_V3, threatValue: 0.25 };
-export const GUIDE_CURRENT: GuideParams = GUIDE_ADVANCED;
+// 第 5 版: 第 7 世代との判断の食い違いを LLM で分類して作った候補を、全世代リーグで検証した。
+// 壁を置きすぎる弱点を 0.5 歩のコストで抑え、4 歩以上の壁脅威があるときだけ守りの壁も読む。
+// 第 1〜7 世代 × 2・3 手読みへの平均勝率は、第 4 版 47.8% → 第 5 版 55.4%。
+export const GUIDE_V5: GuideParams = { ...GUIDE_ADVANCED, wallCost: 0.5, guardThreatAtLeast: 4 };
+export const GUIDE_CURRENT: GuideParams = GUIDE_V5;
 
 // 手番側から見た歩数の差（0 以上なら手番側が先着）
 const lead = (s: GameState) => shortestDistance(s, (1 - s.turn) as Player) - shortestDistance(s, s.turn);

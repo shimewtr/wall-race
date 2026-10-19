@@ -21,7 +21,7 @@ import { WIN, candidateWalls, features, maxDetour, recentCells, search, shortest
 import { fitCalibration, winRate } from '../train/calibrate';
 import type { MoveRecord } from '../train/record';
 import { rngFrom } from '../train/match';
-import { guideMove } from '../guide/policy';
+import { GUIDE_ADVANCED, GUIDE_CURRENT, guideMove } from '../guide/policy';
 
 const sortPos = (ps: { x: number; y: number }[]) =>
   ps.map((p) => `${p.x},${p.y}`).sort();
@@ -239,6 +239,15 @@ describe('手引き AI', () => {
     const m = guideMove(s);
     expect(m.type).toBe('wall');
     expect(shortestDistance(applyMove(s, m), 1)).toBeGreaterThan(3);
+  });
+
+  it('大きな壁脅威があるときだけ守りの壁を候補にする', () => {
+    const moves = 'e2 f9 e3 f8 e4 g8 e5 g7 e6 g6 e7 g5 e8 e8h g4h d7v e7 f5 e4h e5 d5v g8h g5v h8v h3h f3v';
+    let s = initialState();
+    for (const text of moves.split(' ')) s = applyMove(s, moveFromString(text)!);
+    expect(maxDetour(s, 1)).toBeGreaterThanOrEqual(4);
+    expect(moveToString(guideMove(s, GUIDE_ADVANCED))).toBe('f7');
+    expect(moveToString(guideMove(s, GUIDE_CURRENT))).toBe('g7h');
   });
 });
 
