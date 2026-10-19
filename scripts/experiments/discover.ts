@@ -73,6 +73,14 @@ for (const d of meaningful) phases.set(phase(d), (phases.get(phase(d)) ?? 0) + 1
 console.log('\n## 発生する局面');
 for (const p of ['序盤', '中盤', '終盤']) console.log(`- ${p}: ${phases.get(p) ?? 0} 局面`);
 
+console.log('\n## 自分の残り壁');
+for (const n of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+  const at = meaningful.filter((d) => d.myWalls === n);
+  if (at.length === 0) continue;
+  const waste = at.filter((d) => d.guideType === 'wall' && d.expertType === 'pawn');
+  console.log(`- ${n} 枚: ${at.length} 局面（手引きが壁・探索AIが前進: ${waste.length}）`);
+}
+
 console.log(`\n## 推定損失が大きい ${Math.min(top, meaningful.length)} 局面`);
 console.log('`regret` は探索 AI の手と手引きの手の評価差。10 点がおよそ最短経路 1 歩分。');
 for (const [i, d] of [...meaningful].sort((a, b) => b.regret - a.regret).slice(0, top).entries()) {

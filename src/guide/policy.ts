@@ -35,6 +35,8 @@ export interface GuideParams {
   wideWalls?: boolean;
   // 先読みの評価で、壁を 1 枚使うことに課す歩数換算のコスト
   wallCost?: number;
+  // 最後の壁を使い切るときだけ追加で課す歩数換算のコスト
+  lastWallCost?: number;
   // 相手の壁 1 枚でこの歩数以上遠回りさせられるときだけ、脅威を減らす守りの壁を候補にする
   guardThreatAtLeast?: number;
 }
@@ -95,7 +97,10 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number): Move {
         if (params.threatValue) {
           score += params.threatValue * (maxDetour(reply, me) - maxDetour(reply, (1 - me) as Player));
         }
-        if (m.type === 'wall') score -= params.wallCost ?? 0;
+        if (m.type === 'wall') {
+          score -= params.wallCost ?? 0;
+          if (s.wallsLeft[me] === 1) score -= params.lastWallCost ?? 0;
+        }
       }
     }
     if (score > bestScore) {

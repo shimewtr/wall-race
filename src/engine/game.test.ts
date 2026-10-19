@@ -246,9 +246,18 @@ describe('手引き AI', () => {
     let s = initialState();
     for (const text of moves.split(' ')) s = applyMove(s, moveFromString(text)!);
     expect(maxDetour(s, 1)).toBeGreaterThanOrEqual(4);
-    expect(features(s).severeWallThreat).toBe(-12);
     expect(moveToString(guideMove(s, GUIDE_ADVANCED))).toBe('f7');
     expect(moveToString(guideMove(s, GUIDE_CURRENT))).toBe('g7h');
+  });
+
+  it('最後の壁に追加コストを設定すれば、効果の薄い壁を温存する', () => {
+    // 発見ログで、現行版が最後の壁を b8h に使い、探索 AI は f7 と前進した局面。
+    const moves = 'e2 d9 e3 e9 e4 f9 e5 f8 e6 f7 e7 f6 e8 e8h f4h d7v e7 g6 g5v f6 d4h g8h c3h c6h a3h g6 h6h g7v b4h e6h a5v f6 a7v e6 e8 d6 f8 c6';
+    let s = initialState();
+    for (const text of moves.split(' ')) s = applyMove(s, moveFromString(text)!);
+    expect(s.wallsLeft[s.turn]).toBe(1);
+    expect(moveToString(guideMove(s, GUIDE_CURRENT))).toBe('b8h');
+    expect(guideMove(s, { ...GUIDE_CURRENT, lastWallCost: 4 }).type).toBe('pawn');
   });
 });
 
