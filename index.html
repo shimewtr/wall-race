@@ -23,29 +23,33 @@
         <p class="status" id="status"></p>
 
         <div class="controls">
-          <label>
-            対戦
-            <select id="mode">
-              <option value="human-ai">あなた（先手）vs AI</option>
-              <option value="ai-human">AI vs あなた（後手）</option>
-              <option value="human-human">2 人で対戦</option>
-              <option value="ai-ai">AI どうし</option>
-            </select>
-          </label>
-          <label>
-            AI の強さ
-            <select id="level">
-              <option value="easy">やさしい</option>
-              <option value="normal" selected>ふつう</option>
-              <option value="hard">つよい</option>
-            </select>
-          </label>
+          <fieldset>
+            <legend>対戦形式</legend>
+            <div class="choice-group" id="match-kind">
+              <button type="button" data-kind="vs-ai" aria-pressed="true">vs AI</button>
+              <button type="button" data-kind="human-human" aria-pressed="false">対戦</button>
+              <button type="button" data-kind="ai-ai" aria-pressed="false">観戦</button>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>あなたの手番</legend>
+            <div class="choice-group" id="human-side">
+              <button type="button" data-side="first" aria-pressed="true">先手</button>
+              <button type="button" data-side="second" aria-pressed="false">後手</button>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>AI の強さ</legend>
+            <div class="choice-group" id="ai-level">
+              <button type="button" data-level="easy" aria-pressed="false">やさしい</button>
+              <button type="button" data-level="normal" aria-pressed="true">ふつう</button>
+              <button type="button" data-level="hard" aria-pressed="false">つよい</button>
+            </div>
+          </fieldset>
           <div class="buttons">
             <button id="new-game" type="button">新しく始める</button>
-            <button id="undo" type="button">1 手戻す</button>
           </div>
-          <!-- AI どうしの対局の再生操作 -->
-          <div class="buttons playback" id="playback" hidden>
+          <div class="buttons playback" id="playback">
             <button id="step-back" type="button" aria-label="1 手戻す">⏮ 1 手戻す</button>
             <button id="play-pause" type="button">▶ 再生</button>
             <button id="step-forward" type="button" aria-label="1 手進める">1 手進める ⏭</button>

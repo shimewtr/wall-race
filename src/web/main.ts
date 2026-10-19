@@ -24,8 +24,6 @@ type Mode = 'human-ai' | 'ai-human' | 'human-human' | 'ai-ai';
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const boardEl = $<HTMLDivElement>('board');
 const statusEl = $<HTMLParagraphElement>('status');
-const modeEl = $<HTMLSelectElement>('mode');
-const levelEl = $<HTMLSelectElement>('level');
 const bars = [$<HTMLDivElement>('bar-0'), $<HTMLDivElement>('bar-1')];
 
 const PLAYER_NAMES = ['青', '橙'];
@@ -33,6 +31,8 @@ const PLAYER_NAMES = ['青', '橙'];
 let history: GameState[] = [initialState()];
 let moves: Move[] = [];
 let mode: Mode = 'human-ai';
+let humanSide: 'first' | 'second' = 'first';
+let level: Level = 'normal';
 let thinking = false;
 let requestId = 0;
 // AI どうしの対局の再生状態。paused の間は勝手に進めない。redo は「1 手戻す」で戻した手（進めるときに打ち直す）
@@ -111,7 +111,7 @@ function maybeAskAi() {
     kind: 'move',
     id: ++requestId,
     state: s,
-    level: levelEl.value as Level,
+    level,
     recent: recentCells(history, s.turn),
   };
   // AI どうしの対局は見やすいように少し間を置く（1 手ずつ進めるときは待たない）
@@ -126,7 +126,6 @@ function newGame(start = true) {
   requestId++;
   thinking = false;
   stepping = false;
-  mode = modeEl.value as Mode;
   history = [initialState()];
   moves = [];
   redo = [];
@@ -372,13 +371,23 @@ function renderBreakdown(s: GameState) {
 
 function renderControls(s: GameState) {
   const aiai = isAiAi();
-  $('playback').hidden = !aiai;
-  $('undo').hidden = aiai;
+  const vsAi = mode === 'human-ai' || mode === 'ai-human';
+  document.querySelectorAll<HTMLButtonElement>('#match-kind button').forEach((button) => {
+    const selected = button.dataset.kind === (vsAi ? 'vs-ai' : mode);
+    button.setAttribute('aria-pressed', String(selected));
+  });
+  document.querySelectorAll<HTMLButtonElement>('#human-side button').forEach((button) => {
+    button.disabled = !vsAi;
+    button.setAttribute('aria-pressed', String(button.dataset.side === humanSide));
+  });
+  document.querySelectorAll<HTMLButtonElement>('#ai-level button').forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.level === level));
+  });
   const over = isOver(s);
   $<HTMLButtonElement>('play-pause').textContent = paused || over ? '▶ 再生' : '⏸ 一時停止';
   $<HTMLButtonElement>('play-pause').disabled = !aiai || over || stepping;
   $<HTMLButtonElement>('step-forward').disabled = !aiai || over || thinking || stepping;
-  $<HTMLButtonElement>('step-back').disabled = !aiai || thinking || stepping || history.length <= 1;
+  $<HTMLButtonElement>('step-back').disabled = thinking || stepping || history.length <= 1;
 }
 
 function statusText(s: GameState): string {
@@ -401,12 +410,29 @@ function statusText(s: GameState): string {
 }
 
 $('new-game').addEventListener('click', () => newGame(true));
-$('undo').addEventListener('click', undo);
 $('step-back').addEventListener('click', undo);
 $('play-pause').addEventListener('click', togglePlay);
 $('step-forward').addEventListener('click', stepForward);
-// 対戦形式を切り替えただけでは AI どうしの対局を始めない
-modeEl.addEventListener('change', () => newGame(false));
+$('match-kind').addEventListener('click', (event) => {
+  const kind = (event.target as HTMLElement).closest<HTMLButtonElement>('button')?.dataset.kind;
+  if (!kind) return;
+  mode = kind === 'vs-ai' ? (humanSide === 'second' ? 'ai-human' : 'human-ai') : kind as Mode;
+  // 対戦形式を切り替えただけでは AI どうしの対局を始めない
+  newGame(false);
+});
+$('human-side').addEventListener('click', (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button');
+  if (!button || button.disabled) return;
+  humanSide = button.dataset.side === 'second' ? 'second' : 'first';
+  mode = humanSide === 'second' ? 'ai-human' : 'human-ai';
+  newGame(false);
+});
+$('ai-level').addEventListener('click', (event) => {
+  const selected = (event.target as HTMLElement).closest<HTMLButtonElement>('button')?.dataset.level as Level | undefined;
+  if (!selected) return;
+  level = selected;
+  renderControls(current());
+});
 boardEl.addEventListener('pointerleave', () => {
   if (!pendingWall) hidePreview();
 });
