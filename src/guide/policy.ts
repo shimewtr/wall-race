@@ -68,7 +68,10 @@ export const GUIDE_V5: GuideParams = { ...GUIDE_ADVANCED, wallCost: 0.5, guardTh
 // 第 6 版: 第 5 版の敗戦300局を再分析し、最後の壁を使い切る失敗が多いことから追加した。
 // 最後の1枚に2歩分の追加コストを付け、全世代リーグ平均 55.4% → 66.8%。
 export const GUIDE_V6: GuideParams = { ...GUIDE_V5, lastWallCost: 2 };
-export const GUIDE_CURRENT: GuideParams = GUIDE_V6;
+// 第 7 版: 第 8 世代との敗戦ログで、壁が尽きた後に同じ2マスを往復する例が繰り返し見つかった。
+// 直近にいたマスへ戻る手に0.5歩分のコストを付け、全世代リーグ平均 68.4% → 71.4%。
+export const GUIDE_V7: GuideParams = { ...GUIDE_V6, backtrackCost: 0.5 };
+export const GUIDE_CURRENT: GuideParams = GUIDE_V7;
 
 // 手番側から見た歩数の差（0 以上なら手番側が先着）
 const lead = (s: GameState) => shortestDistance(s, (1 - s.turn) as Player) - shortestDistance(s, s.turn);
