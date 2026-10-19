@@ -35,10 +35,6 @@ export interface GuideParams {
   wideWalls?: boolean;
   // 先読みの評価で、壁を 1 枚使うことに課す歩数換算のコスト
   wallCost?: number;
-  // このまま前進しても先着できる局面で、壁に追加で課す歩数換算のコスト
-  leadingWallCost?: number;
-  // leadingWallCost を課す最小リード。0 なら同着以上の全局面
-  leadingWallCostAtLeast?: number;
   // 最後の壁を使い切るときだけ追加で課す歩数換算のコスト
   lastWallCost?: number;
   // 直近にいたマスへ戻る手に課す歩数換算のコスト（往復を避ける）
@@ -111,7 +107,6 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number, recent:
         }
         if (m.type === 'wall') {
           score -= params.wallCost ?? 0;
-          if (lead(s) >= (params.leadingWallCostAtLeast ?? 0)) score -= params.leadingWallCost ?? 0;
           if (s.wallsLeft[me] === 1) score -= params.lastWallCost ?? 0;
         } else if (recent.some((p) => p.x === m.x && p.y === m.y)) {
           score -= params.backtrackCost ?? 0;
