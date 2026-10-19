@@ -1,0 +1,76 @@
+// 手引き AI が最新チャンピオンと違う手を選ぶ局面を集め、LLM で読める形に要約する。
+// 重い処理なので GitHub Actions の Experiment ワークフローから実行する。
+//
+// 例: npx tsx scripts/experiments/discover.ts --games 120 --top 30
+
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { parseArgs } from 'node:util';
+import type { Disagreement } from '../../src/guide/discover';
+import { DiscoveryPool } from '../lib/pool';
+
+const { values: args } = parseArgs({
+  options: {
+    games: { type: 'string', default: '120' },
+    depth: { type: 'string', default: '3' },
+    top: { type: 'string', default: '30' },
+  },
+});
+
+const champion = JSON.parse(readFileSync(join(import.meta.dirname, '..', '..', 'training', 'champion.json'), 'utf8'));
+const games = Number(args.games);
+const depth = Number(args.depth);
+const top = Number(args.top);
+const pool = new DiscoveryPool();
+const records = await pool.runAll(
+  Array.from({ length: games }, (_, i) => ({
+    weights: champion.weights,
+    depth,
+    guidePlayer: (i % 2) as 0 | 1,
+    seed: 41_000_000 + i,
+  })),
+);
+await pool.close();
+
+const pct = (n: number, d: number) => (d ? `${((n / d) * 100).toFixed(1)}%` : '-');
+const won = records.filter((g) => g.winner === g.guidePlayer).length;
+const drawn = records.filter((g) => g.winner === null).length;
+const all = records.flatMap((g) => g.disagreements);
+const losses = all.filter((d) => !d.guideWon);
+const meaningful = losses.filter((d) => d.regret >= 1);
+
+console.log(`# 戦術発見用ログ: 手引き AI 対 第 ${champion.generation} 世代`);
+console.log();
+console.log(`対局: ${games} 局（${depth} 手読み） / 手引き AI 勝率 ${pct(won, games)} / 引き分け ${drawn} 局`);
+console.log(`判断の不一致: ${all.length} 局面 / 手引き敗戦中 ${losses.length} 局面 / 推定損失 1 点以上 ${meaningful.length} 局面`);
+
+const kinds = new Map<string, { n: number; regret: number }>();
+for (const d of meaningful) {
+  const key = `${d.guideType} → ${d.expertType}`;
+  const e = kinds.get(key) ?? { n: 0, regret: 0 };
+  e.n++;
+  e.regret += d.regret;
+  kinds.set(key, e);
+}
+console.log('\n## 不一致の種類');
+for (const [kind, e] of [...kinds].sort((a, b) => b[1].n - a[1].n)) {
+  console.log(`- ${kind}: ${e.n} 局面、平均推定損失 ${(e.regret / e.n).toFixed(1)} 点`);
+}
+
+const phase = (d: Disagreement) => (d.position.ply < 12 ? '序盤' : d.myWalls + d.opWalls <= 6 ? '終盤' : '中盤');
+const phases = new Map<string, number>();
+for (const d of meaningful) phases.set(phase(d), (phases.get(phase(d)) ?? 0) + 1);
+console.log('\n## 発生する局面');
+for (const p of ['序盤', '中盤', '終盤']) console.log(`- ${p}: ${phases.get(p) ?? 0} 局面`);
+
+console.log(`\n## 推定損失が大きい ${Math.min(top, meaningful.length)} 局面`);
+console.log('`regret` は探索 AI の手と手引きの手の評価差。10 点がおよそ最短経路 1 歩分。');
+for (const [i, d] of [...meaningful].sort((a, b) => b.regret - a.regret).slice(0, top).entries()) {
+  console.log(`\n### ${i + 1}. ${phase(d)}・${d.position.ply} 手目・regret ${d.regret}`);
+  console.log(`- 手引き: ${d.guideMove}（${d.guideType}、評価 ${d.guideScore}）`);
+  console.log(`- 探索AI: ${d.expertMove}（${d.expertType}、評価 ${d.expertScore}）`);
+  console.log(`- 残り歩数: 自分 ${d.myDist} / 相手 ${d.opDist}、壁: 自分 ${d.myWalls} / 相手 ${d.opWalls}`);
+  console.log(`- 壁1枚の最大効果: 自分 ${d.myThreat} / 相手 ${d.opThreat}、最短ルート多様性: 自分 ${d.myRoutes} / 相手 ${d.opRoutes}`);
+  console.log(`- 盤面: 駒 ${d.position.pawns.join(' / ')}、横壁 [${d.position.hWalls.join(' ')}]、縦壁 [${d.position.vWalls.join(' ')}]`);
+  console.log(`- 直前までの棋譜: ${d.position.moves || '（初期局面）'}`);
+}

@@ -1,0 +1,158 @@
+// 手引き AI と探索 AI の判断が食い違う局面を集める。
+// LLM に渡せるよう、盤面・棋譜・局面の数値・探索上の損失を小さなレコードにまとめる。
+
+import { maxDetour, recentCells, search, shortestRouteDiversity, type Weights } from '../engine/ai';
+import {
+  type GameState,
+  type Move,
+  type Player,
+  WALL_SLOTS,
+  applyMove,
+  initialState,
+  isOver,
+  moveToString,
+  shortestDistance,
+} from '../engine/game';
+import { OPENING_PLIES, depthAt, pickAt, rngFrom } from '../train/match';
+import { GUIDE_CURRENT, type GuideParams, guideMove } from './policy';
+
+export interface DiscoveryJob {
+  weights: Partial<Weights>;
+  depth: number;
+  guidePlayer: Player;
+  seed: number;
+  params?: GuideParams;
+}
+
+export interface DiscoveryPosition {
+  ply: number;
+  guidePlayer: Player;
+  pawns: [string, string];
+  wallsLeft: [number, number];
+  hWalls: string[];
+  vWalls: string[];
+  moves: string;
+}
+
+export interface Disagreement {
+  position: DiscoveryPosition;
+  guideMove: string;
+  expertMove: string;
+  guideType: Move['type'];
+  expertType: Move['type'];
+  expertScore: number;
+  guideScore: number;
+  regret: number;
+  myDist: number;
+  opDist: number;
+  myWalls: number;
+  opWalls: number;
+  myThreat: number;
+  opThreat: number;
+  myRoutes: number;
+  opRoutes: number;
+  guideWon?: boolean;
+}
+
+export interface DiscoveryGame {
+  guidePlayer: Player;
+  winner: Player | null;
+  moves: string[];
+  disagreements: Disagreement[];
+}
+
+const sameMove = (a: Move, b: Move) =>
+  a.type === b.type && a.x === b.x && a.y === b.y && (a.type === 'pawn' || (b.type === 'wall' && a.o === b.o));
+
+const pawnName = (s: GameState, p: Player) => moveToString({ type: 'pawn', ...s.pawns[p] });
+
+function wallNames(s: GameState, orientation: 'h' | 'v'): string[] {
+  const walls = orientation === 'h' ? s.hWalls : s.vWalls;
+  const result: string[] = [];
+  for (let y = 0; y < WALL_SLOTS; y++) {
+    for (let x = 0; x < WALL_SLOTS; x++) {
+      if (walls[y * WALL_SLOTS + x]) result.push(moveToString({ type: 'wall', x, y, o: orientation }));
+    }
+  }
+  return result;
+}
+
+const rounded = (n: number) => Math.round(n * 10) / 10;
+
+export function discoverGame(job: DiscoveryJob): DiscoveryGame {
+  const params = job.params ?? GUIDE_CURRENT;
+  const rng = rngFrom(job.seed);
+  const history: GameState[] = [initialState()];
+  const moves: string[] = [];
+  const disagreements: Disagreement[] = [];
+  let s = history[0];
+
+  while (!isOver(s)) {
+    const currentDepth = depthAt(s.ply, job.depth, OPENING_PLIES);
+    let move: Move;
+    if (s.turn === job.guidePlayer) {
+      const guide = guideMove(s, params);
+      const expert = search(s, {
+        maxDepth: currentDepth,
+        weights: job.weights,
+        recent: recentCells(history, s.turn),
+      });
+      move = guide;
+      if (!sameMove(guide, expert.move)) {
+        const me = s.turn;
+        const op = (1 - me) as Player;
+        const after = applyMove(s, guide);
+        // 根の探索と同じ読みの深さになるよう、手引きの手の後を 1 段浅く読む。
+        // 手引きの手で即勝ちした場合は損失 0 として、発見候補から自然に外す。
+        const guideScore = isOver(after)
+          ? expert.score
+          : -search(after, {
+              maxDepth: Math.max(1, currentDepth - 1),
+              weights: job.weights,
+              recent: recentCells([...history, after], after.turn),
+            }).score;
+        disagreements.push({
+          position: {
+            ply: s.ply,
+            guidePlayer: job.guidePlayer,
+            pawns: [pawnName(s, 0), pawnName(s, 1)],
+            wallsLeft: [s.wallsLeft[0], s.wallsLeft[1]],
+            hWalls: wallNames(s, 'h'),
+            vWalls: wallNames(s, 'v'),
+            moves: moves.join(' '),
+          },
+          guideMove: moveToString(guide),
+          expertMove: moveToString(expert.move),
+          guideType: guide.type,
+          expertType: expert.move.type,
+          expertScore: rounded(expert.score),
+          guideScore: rounded(guideScore),
+          regret: rounded(expert.score - guideScore),
+          myDist: shortestDistance(s, me),
+          opDist: shortestDistance(s, op),
+          myWalls: s.wallsLeft[me],
+          opWalls: s.wallsLeft[op],
+          myThreat: maxDetour(s, me),
+          opThreat: maxDetour(s, op),
+          myRoutes: rounded(shortestRouteDiversity(s, me)),
+          opRoutes: rounded(shortestRouteDiversity(s, op)),
+        });
+      }
+    } else {
+      move = search(s, {
+        maxDepth: currentDepth,
+        weights: job.weights,
+        margin: 1,
+        pickFromTop: pickAt(s.ply, OPENING_PLIES),
+        rng,
+        recent: recentCells(history, s.turn),
+      }).move;
+    }
+    moves.push(moveToString(move));
+    s = applyMove(s, move);
+    history.push(s);
+  }
+
+  for (const d of disagreements) d.guideWon = s.winner === job.guidePlayer;
+  return { guidePlayer: job.guidePlayer, winner: s.winner, moves, disagreements };
+}

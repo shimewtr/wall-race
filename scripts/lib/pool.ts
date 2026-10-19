@@ -6,6 +6,7 @@ import type { Weights } from '../../src/engine/ai';
 import type { MatchConfig } from '../../src/train/match';
 import type { GameRecord, RecordJob } from '../../src/train/record';
 import type { GuideJob } from '../../src/guide/match';
+import type { DiscoveryGame, DiscoveryJob } from '../../src/guide/discover';
 
 export interface PairJob {
   a: Partial<Weights>;
@@ -90,5 +91,12 @@ export class RecordPool extends WorkerPool<RecordJob, GameRecord> {
 export class GuidePool extends WorkerPool<GuideJob, number> {
   constructor(size?: number) {
     super(new URL('./guide-worker.ts', import.meta.url), size);
+  }
+}
+
+// 手引き AI と探索 AI が違う手を選ぶ局面を記録する（戦術発見用）
+export class DiscoveryPool extends WorkerPool<DiscoveryJob, DiscoveryGame> {
+  constructor(size?: number) {
+    super(new URL('./discover-worker.ts', import.meta.url), size);
   }
 }
