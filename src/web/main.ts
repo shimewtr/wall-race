@@ -24,7 +24,6 @@ type Mode = 'human-ai' | 'ai-human' | 'human-human' | 'ai-ai';
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const boardEl = $<HTMLDivElement>('board');
 const statusEl = $<HTMLParagraphElement>('status');
-const recordEl = $<HTMLOListElement>('record');
 const modeEl = $<HTMLSelectElement>('mode');
 const levelEl = $<HTMLSelectElement>('level');
 const bars = [$<HTMLDivElement>('bar-0'), $<HTMLDivElement>('bar-1')];
@@ -78,6 +77,14 @@ function play(m: Move, fromRedo = false) {
 }
 
 const isAiAi = () => mode === 'ai-ai';
+
+// 1 人で後手を持つときだけ表示を 180 度回し、人間を常に手前にする。
+// ゲーム内部の座標と棋譜は変えない。
+const isFlipped = () => mode === 'ai-human';
+const displayCell = (x: number, y: number) =>
+  isFlipped() ? { x: SIZE - 1 - x, y: SIZE - 1 - y } : { x, y };
+const displayWall = (x: number, y: number) =>
+  isFlipped() ? { x: WALL_SLOTS - 1 - x, y: WALL_SLOTS - 1 - y } : { x, y };
 
 function maybeAskAi() {
   const s = current();
@@ -184,8 +191,9 @@ const place = (el: HTMLElement, col: number, row: number, colSpan = 1, rowSpan =
 function wallEl(x: number, y: number, o: Orientation, cls: string): HTMLDivElement {
   const el = document.createElement('div');
   el.className = `wall ${o} ${cls}`;
-  if (o === 'h') place(el, 2 * x + 1, 2 * y + 2, 3, 1);
-  else place(el, 2 * x + 2, 2 * y + 1, 1, 3);
+  const shown = displayWall(x, y);
+  if (o === 'h') place(el, 2 * shown.x + 1, 2 * shown.y + 2, 3, 1);
+  else place(el, 2 * shown.x + 2, 2 * shown.y + 1, 1, 3);
   return el;
 }
 
@@ -248,7 +256,8 @@ function render() {
       if (y === SIZE - 1) cell.classList.add('goal-1');
       if (last?.type === 'pawn' && last.x === x && last.y === y) cell.classList.add('last');
       cell.setAttribute('aria-label', moveToString({ type: 'pawn', x, y }));
-      place(cell, 2 * x + 1, 2 * y + 1);
+      const shown = displayCell(x, y);
+      place(cell, 2 * shown.x + 1, 2 * shown.y + 1);
       if (targets.some((t) => t.x === x && t.y === y)) {
         cell.classList.add('target');
         cell.addEventListener('click', () => play({ type: 'pawn', x, y }));
@@ -267,12 +276,16 @@ function render() {
   // 壁を置くための溝。横の溝は横壁、縦の溝は縦壁。端の溝は内側にずらしたアンカーに対応させる。
   for (let y = 0; y < WALL_SLOTS; y++) {
     for (let x = 0; x < SIZE; x++) {
-      boardEl.appendChild(slotEl(2 * x + 1, 2 * y + 2, 'h', Math.min(x, WALL_SLOTS - 1), y, 'h'));
+      const shown = displayCell(x, y);
+      const displayGapY = isFlipped() ? shown.y : shown.y + 1;
+      boardEl.appendChild(slotEl(2 * shown.x + 1, 2 * displayGapY, 'h', Math.min(x, WALL_SLOTS - 1), y, 'h'));
     }
   }
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < WALL_SLOTS; x++) {
-      boardEl.appendChild(slotEl(2 * x + 2, 2 * y + 1, 'v', x, Math.min(y, WALL_SLOTS - 1), 'v'));
+      const shown = displayCell(x, y);
+      const displayGapX = isFlipped() ? shown.x : shown.x + 1;
+      boardEl.appendChild(slotEl(2 * displayGapX, 2 * shown.y + 1, 'v', x, Math.min(y, WALL_SLOTS - 1), 'v'));
     }
   }
 
@@ -286,6 +299,12 @@ function render() {
 
   if (pendingWall) showPreview(pendingWall.x, pendingWall.y, pendingWall.o);
 
+  // 表示上の手前・奥だけを入れ替える。AI 同士などは従来どおり青が手前。
+  const near: Player = isFlipped() ? 1 : 0;
+  const far: Player = near === 0 ? 1 : 0;
+  boardEl.before(bars[far]);
+  boardEl.after(bars[near]);
+
   for (const p of [0, 1] as const) {
     const who = mode === 'human-human' ? PLAYER_NAMES[p] : isHuman(p) ? 'あなた' : 'AI';
     const pips = Array.from({ length: WALLS_PER_PLAYER }, (_, i) =>
@@ -298,14 +317,6 @@ function render() {
   requestEval(s);
   renderControls(s);
 
-  recordEl.replaceChildren(
-    ...Array.from({ length: Math.ceil(moves.length / 2) }, (_, i) => {
-      const li = document.createElement('li');
-      li.textContent = moves.slice(i * 2, i * 2 + 2).map(moveToString).join('  ');
-      return li;
-    }),
-  );
-  recordEl.parentElement!.scrollTop = recordEl.parentElement!.scrollHeight;
 }
 
 // ---- 形勢の表示 ----
@@ -392,9 +403,9 @@ function renderControls(s: GameState) {
   $('undo').hidden = aiai;
   const over = isOver(s);
   $<HTMLButtonElement>('play-pause').textContent = paused || over ? '▶ 再生' : '⏸ 一時停止';
-  $<HTMLButtonElement>('play-pause').disabled = over;
-  $<HTMLButtonElement>('step-forward').disabled = over || thinking || stepping;
-  $<HTMLButtonElement>('step-back').disabled = history.length <= 1;
+  $<HTMLButtonElement>('play-pause').disabled = !aiai || over || stepping;
+  $<HTMLButtonElement>('step-forward').disabled = !aiai || over || thinking || stepping;
+  $<HTMLButtonElement>('step-back').disabled = !aiai || thinking || stepping || history.length <= 1;
 }
 
 function statusText(s: GameState): string {
@@ -406,19 +417,11 @@ function statusText(s: GameState): string {
   }
   if (s.draw) return '引き分け（手数上限）';
   if (thinking) return 'AI が考え中…';
-  if (isAiAi() && paused) return moves.length === 0 ? '「新しく始める」か「再生」で開始' : '一時停止中';
+  if (isAiAi() && paused) return moves.length === 0 ? '' : '一時停止中';
   return mode === 'human-human' ? `${name(s.turn)}の番` : isHuman(s.turn) ? 'あなたの番' : 'AI の番';
 }
 
 {
-  const ai = champion ? `AI: 自己対戦で学習した第 ${champion.generation} 世代` : 'AI: 学習前の初期設定';
-  const built = new Date(__BUILD_TIME__).toLocaleString('ja-JP', {
-    year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
-  const link = document.createElement('a');
-  link.href = `https://github.com/shimewtr/wall-race/commit/${__APP_COMMIT__}`;
-  link.textContent = `v${__APP_COMMIT__.slice(0, 7)}`;
-  $('ai-gen').replaceChildren(`${ai} · `, link, `（${built}）`);
   $('eval-note').textContent = calibration
     ? `第 ${calibration.generation} 世代の AI が ${EVAL_DEPTH} 手読みで判断した形勢を、同じ AI の自己対戦の勝ち負けから勝率に換算したもの`
     : `${champion ? `第 ${champion.generation} 世代` : '初期設定'}の AI が ${EVAL_DEPTH} 手読みで判断した評価値（勝率への換算式はまだ無い）`;

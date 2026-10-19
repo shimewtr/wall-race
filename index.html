@@ -9,16 +9,24 @@
   <body>
     <main class="app">
       <section class="board-area">
+        <section class="eval" id="eval" aria-live="polite">
+          <div class="eval-head">
+            <h2>戦況</h2>
+            <label class="toggle"><input type="checkbox" id="show-eval" checked /> 表示する</label>
+          </div>
+          <div class="eval-body">
+            <div class="eval-bar"><div class="eval-fill" id="eval-fill"></div></div>
+            <p class="eval-text" id="eval-text"></p>
+            <table class="eval-table" id="eval-table"></table>
+            <p class="eval-note" id="eval-note"></p>
+          </div>
+        </section>
         <div class="player-bar" id="bar-1"></div>
         <div class="board" id="board"></div>
         <div class="player-bar" id="bar-0"></div>
       </section>
 
       <aside class="panel">
-        <div>
-          <h1>Wall Race</h1>
-          <p class="ai-gen" id="ai-gen"></p>
-        </div>
         <p class="status" id="status"></p>
 
         <div class="controls">
@@ -51,19 +59,6 @@
           </div>
         </div>
 
-        <section class="eval" id="eval" aria-live="polite">
-          <div class="eval-head">
-            <h2>形勢</h2>
-            <label class="toggle"><input type="checkbox" id="show-eval" checked /> 表示する</label>
-          </div>
-          <div class="eval-body">
-            <div class="eval-bar"><div class="eval-fill" id="eval-fill"></div></div>
-            <p class="eval-text" id="eval-text"></p>
-            <table class="eval-table" id="eval-table"></table>
-            <p class="eval-note" id="eval-note"></p>
-          </div>
-        </section>
-
         <details class="rules" open>
           <summary>ルール</summary>
           <ul>
@@ -76,10 +71,6 @@
           <p class="hint">マスをクリックでコマを移動、マスの間の溝をクリックで壁を置く（スマホは 2 回タップで確定）。</p>
         </details>
 
-        <div class="record">
-          <h2>棋譜</h2>
-          <ol id="record"></ol>
-        </div>
       </aside>
     </main>
     <script type="module" src="/src/web/main.ts"></script>

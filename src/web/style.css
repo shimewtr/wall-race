@@ -68,7 +68,7 @@ body {
 /* ---- 盤面 ---- */
 
 .board-area {
-  --size: min(92vw, 560px, calc(100vh - 140px));
+  --size: min(92vw, 560px, calc(100svh - 188px));
   --gap: calc(var(--size) * 0.025);
   --cell-size: calc((var(--size) - 8 * var(--gap)) / 9);
   display: flex;
@@ -234,6 +234,7 @@ body {
 /* ---- 形勢 ---- */
 
 .eval {
+  width: 100%;
   padding: 10px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -339,21 +340,6 @@ body {
   gap: 16px;
 }
 
-h1 {
-  margin: 0;
-  font-size: 24px;
-}
-
-.ai-gen {
-  margin: 2px 0 0;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.ai-gen a {
-  color: inherit;
-}
-
 h2 {
   margin: 0 0 4px;
   font-size: 14px;
@@ -422,6 +408,41 @@ button#undo,
   cursor: default;
 }
 
+@media (max-width: 640px) {
+  .app {
+    gap: 16px;
+    padding: 8px 8px 20px;
+  }
+
+  .board-area {
+    --size: min(calc(100vw - 16px), calc(100svh - 174px));
+    gap: 6px;
+  }
+
+  .eval {
+    padding: 6px 10px;
+  }
+
+  .eval-bar {
+    margin-top: 4px;
+  }
+
+  .eval-text {
+    margin: 3px 0 0;
+    line-height: 1.35;
+  }
+
+  .eval-table,
+  .eval-note {
+    display: none;
+  }
+
+  .player-bar {
+    padding: 4px 10px;
+    line-height: 1.4;
+  }
+}
+
 [hidden] {
   display: none !important;
 }
@@ -447,16 +468,4 @@ button#undo,
 .hint {
   margin: 0;
   color: var(--muted);
-}
-
-.record {
-  max-height: 200px;
-  overflow-y: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
-}
-
-.record ol {
-  margin: 0;
-  padding-left: 32px;
 }
