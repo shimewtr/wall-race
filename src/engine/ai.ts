@@ -36,6 +36,7 @@ export const FEATURES = {
   adjacent: '相手と隣接している（手番側は飛び越えのチャンス）',
   lockedRace: '壁が尽きて歩数勝負が確定している（相手の壁 0 で自分が先着できる +1、自分の壁 0 で相手が先着できる -1）',
   wallThreat: '壁 1 枚で相手を遠回りさせられる最大の歩数 − 相手が壁 1 枚で自分を遠回りさせられる最大の歩数（壁が尽きた側は 0）',
+  severeWallThreat: '壁 1 枚で 4 歩以上遠回りさせられる大きな脅威だけの差（自分が作れる脅威 − 相手が作れる脅威）',
   routeDiversity: '最短ルートの本数の差（自分 − 相手。2 倍ごとに +1、16 本で頭打ち）',
 } as const;
 
@@ -54,6 +55,7 @@ export const DEFAULT_WEIGHTS: Weights = {
   adjacent: 0,
   lockedRace: 0,
   wallThreat: 0,
+  severeWallThreat: 0,
   routeDiversity: 0,
 };
 
@@ -238,6 +240,8 @@ export function features(
   const op = (1 - me) as Player;
   const my = s.pawns[me];
   const o = s.pawns[op];
+  const myThreat = withThreat ? maxDetour(s, me, opDist) : 0;
+  const opThreat = withThreat ? maxDetour(s, op, myDist) : 0;
   return {
     pathDiff: opDist - myDist,
     rowDiff: Math.abs(goalRow(op) - o.y) - Math.abs(goalRow(me) - my.y),
@@ -250,7 +254,9 @@ export function features(
     // 手番側は同じ歩数なら先に着く。壁が無ければ相手は邪魔できない
     lockedRace:
       (s.wallsLeft[op] === 0 && myDist <= opDist ? 1 : 0) - (s.wallsLeft[me] === 0 && opDist < myDist ? 1 : 0),
-    wallThreat: withThreat ? maxDetour(s, me, opDist) - maxDetour(s, op, myDist) : 0,
+    wallThreat: myThreat - opThreat,
+    // 手引きの棋譜分析で「4 歩以上の脅威だけ守る」と強くなったため、線形の wallThreat と分けて試す。
+    severeWallThreat: Math.max(0, myThreat - 3) - Math.max(0, opThreat - 3),
     routeDiversity: withRouteDiversity ? shortestRouteDiversity(s, me) - shortestRouteDiversity(s, op) : 0,
   };
 }
@@ -259,7 +265,7 @@ export function features(
 export function evaluate(s: GameState, w: Weights = DEFAULT_WEIGHTS, myDist?: number, opDist?: number): number {
   if (s.winner !== null) return s.winner === s.turn ? WIN : -WIN;
   if (s.draw) return 0;
-  const f = features(s, myDist, opDist, w.wallThreat !== 0, w.routeDiversity !== 0);
+  const f = features(s, myDist, opDist, w.wallThreat !== 0 || w.severeWallThreat !== 0, w.routeDiversity !== 0);
   let score = 0;
   for (const k of FEATURE_NAMES) score += w[k] * f[k];
   return score;

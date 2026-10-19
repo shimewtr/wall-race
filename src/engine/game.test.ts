@@ -246,6 +246,7 @@ describe('手引き AI', () => {
     let s = initialState();
     for (const text of moves.split(' ')) s = applyMove(s, moveFromString(text)!);
     expect(maxDetour(s, 1)).toBeGreaterThanOrEqual(4);
+    expect(features(s).severeWallThreat).toBe(-12);
     expect(moveToString(guideMove(s, GUIDE_ADVANCED))).toBe('f7');
     expect(moveToString(guideMove(s, GUIDE_CURRENT))).toBe('g7h');
   });
