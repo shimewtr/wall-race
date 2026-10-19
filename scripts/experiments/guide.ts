@@ -18,6 +18,8 @@ const { values: args } = parseArgs({
     variant: { type: 'string', multiple: true, default: [] },
     // league: 過去の全世代 × 2・3 手読みを相手にして平均を出す（特定の相手への合わせ込みを避ける）
     opponents: { type: 'string', default: 'league' },
+    // 現行版と --variant だけを比べる（候補の絞り込み用）
+    'current-only': { type: 'boolean', default: false },
   },
 });
 
@@ -26,12 +28,15 @@ const championWeights = withDefaults(
   existsSync(CHAMPION) ? JSON.parse(readFileSync(CHAMPION, 'utf8')).weights : {},
 );
 
-const variants: Array<[string, GuideParams]> = [
+const historical: Array<[string, GuideParams]> = [
   ['手引き初版', GUIDE_V1],
   ['第 2 版（相手の最善の邪魔を 1 手想定）', GUIDE_V2],
   ['第 3 版（相手も第 2 版で考えると想定）', GUIDE_V3],
   ['第 4 版・基本（第 2 版 + 遠回りの差の 4 分の 1）', GUIDE_BASIC],
   ['第 4 版・上級（第 3 版 + 遠回りの差の 4 分の 1）', GUIDE_ADVANCED],
+];
+const variants: Array<[string, GuideParams]> = [
+  ...(args['current-only'] ? [['現行の手引き', GUIDE_CURRENT] as [string, GuideParams]] : historical),
   ...args.variant!.map((v): [string, GuideParams] => [v, { ...GUIDE_CURRENT, ...JSON.parse(v) }]),
 ];
 

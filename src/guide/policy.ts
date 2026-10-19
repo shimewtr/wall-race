@@ -31,6 +31,8 @@ export interface GuideParams {
   wallValue?: number;
   // 返しのあと「お互いに壁 1 枚で相手を何歩遠回りさせられるか」の差を、この倍率で形勢に足す
   threatValue?: number;
+  // 相手の最短経路をふさぐ壁だけでなく、自分の経路を守る壁やコマ周りの壁も候補にする
+  wideWalls?: boolean;
 }
 
 export const GUIDE_V1: GuideParams = {
@@ -65,7 +67,8 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number): Move {
   const me = s.turn;
   const op = (1 - me) as Player;
   // 相手がまだ遠いうちは壁を候補に入れない（温存）
-  const walls = shortestDistance(s, op) <= params.saveWallsWhileOpponentFarther ? candidateWalls(s) : [];
+  const walls =
+    shortestDistance(s, op) <= params.saveWallsWhileOpponentFarther ? candidateWalls(s, params.wideWalls ?? false) : [];
   const candidates: Move[] = [...pawnMoves(s).map((p): Move => ({ type: 'pawn', x: p.x, y: p.y })), ...walls];
   let best = candidates[0];
   let bestScore = -Infinity;
@@ -110,7 +113,7 @@ function simpleMove(s: GameState, params: GuideParams): Move {
   if (wantWall) {
     let best: Move | null = null;
     let bestGain = -Infinity;
-    for (const w of candidateWalls(s)) {
+    for (const w of candidateWalls(s, params.wideWalls ?? false)) {
       const n = applyMove(s, w);
       const gain = shortestDistance(n, op) - opDist - (shortestDistance(n, me) - myDist);
       if (gain > bestGain) {

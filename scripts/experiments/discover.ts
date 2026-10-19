@@ -37,12 +37,22 @@ const won = records.filter((g) => g.winner === g.guidePlayer).length;
 const drawn = records.filter((g) => g.winner === null).length;
 const all = records.flatMap((g) => g.disagreements);
 const losses = all.filter((d) => !d.guideWon);
-const meaningful = losses.filter((d) => d.regret >= 1);
+const meaningfulRaw = losses.filter((d) => d.regret >= 1);
+// 序盤の乱数だけが違って同じ盤面へ合流することがある。LLM に同じ例を何度も見せない。
+const unique = new Map<string, Disagreement>();
+for (const d of meaningfulRaw) {
+  const key = JSON.stringify([d.position.pawns, d.position.wallsLeft, d.position.hWalls, d.position.vWalls, d.position.guidePlayer]);
+  const previous = unique.get(key);
+  if (!previous || d.regret > previous.regret) unique.set(key, d);
+}
+const meaningful = [...unique.values()];
 
 console.log(`# 戦術発見用ログ: 手引き AI 対 第 ${champion.generation} 世代`);
 console.log();
 console.log(`対局: ${games} 局（${depth} 手読み） / 手引き AI 勝率 ${pct(won, games)} / 引き分け ${drawn} 局`);
-console.log(`判断の不一致: ${all.length} 局面 / 手引き敗戦中 ${losses.length} 局面 / 推定損失 1 点以上 ${meaningful.length} 局面`);
+console.log(
+  `判断の不一致: ${all.length} 局面 / 手引き敗戦中 ${losses.length} 局面 / 推定損失 1 点以上 ${meaningfulRaw.length} 局面（重複除去後 ${meaningful.length}）`,
+);
 
 const kinds = new Map<string, { n: number; regret: number }>();
 for (const d of meaningful) {
