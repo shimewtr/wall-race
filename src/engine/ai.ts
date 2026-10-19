@@ -81,6 +81,9 @@ export interface SearchOptions {
 }
 
 export const REPEAT_PENALTY = 8;
+// 根でも相手の最短経路をふさぐ壁だけを候補にする。
+// 広い候補との比較は 3 手・4 手読みとも 400 局で互角、狭い候補は約 4〜7 倍速かった。
+export const WIDE_ROOT_DEFAULT = false;
 
 // 対局の状態履歴から、player のコマが直近 n 手番でいたマスを返す（現在地は除く）
 export function recentCells(history: GameState[], player: Player, n = 4): Pos[] {
@@ -426,7 +429,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
     return best === -Infinity ? evaluate(st, weights, myDist, opDist) : best;
   };
 
-  const rootMoves = orderedMoves(s, opts.wideRoot ?? true);
+  const rootMoves = orderedMoves(s, opts.wideRoot ?? WIDE_ROOT_DEFAULT);
   const rootMy = shortestDistance(s, s.turn);
   const rootOp = shortestDistance(s, (1 - s.turn) as Player);
   const recent = opts.recent ?? [];
@@ -486,7 +489,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
 export const LEVELS = {
   easy: { maxDepth: 1, noise: 8 },
   normal: { maxDepth: 2, noise: 2 },
-  // 第 7 世代では 3 手読みに 70.5%（400 局）。比較時は平均 12ms / 最大 40ms。
+  // 第 7 世代では 3 手読みに 70.5%（400 局）。狭い根候補の 4 手読みは平均 13ms / 最大 44ms。
   hard: { maxDepth: 4, timeMs: 5000, margin: 1 },
 } satisfies Record<string, SearchOptions>;
 
