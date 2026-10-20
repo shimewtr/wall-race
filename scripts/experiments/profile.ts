@@ -8,7 +8,7 @@ import { Session } from 'node:inspector/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { detourStats, search, withDefaults } from '../../src/engine/ai';
-import { type GameState, applyMove, distanceStats, initialState, isOver } from '../../src/engine/game';
+import { type GameState, applyMove, initialState, isOver } from '../../src/engine/game';
 import { rngFrom } from '../../src/train/match';
 
 const { values: args } = parseArgs({ options: { depth: { type: 'string', default: '3' } } });
@@ -50,7 +50,6 @@ for (const n of profile.nodes) {
 }
 const sum = [...self.values()].reduce((a, b) => a + b, 0);
 console.log(`maxDetour: ${detourStats.calls} 回呼ばれ、キャッシュに無く計算したのは ${detourStats.misses} 回（当たり率 ${((1 - detourStats.misses / detourStats.calls) * 100).toFixed(1)}%）`);
-console.log(`距離表: ${distanceStats.calls} 回参照され、キャッシュに無く計算したのは ${distanceStats.misses} 回（当たり率 ${((1 - distanceStats.misses / distanceStats.calls) * 100).toFixed(1)}%）`);
 console.log(`${sample.length} 局面を ${args.depth} 手読み: 合計 ${total.toFixed(0)}ms\n`);
 console.log('自己時間の多い関数:');
 for (const [k, v] of [...self].sort((a, b) => b[1] - a[1]).slice(0, 20)) {

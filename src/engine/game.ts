@@ -114,52 +114,49 @@ export function pawnMoves(s: GameState, p: Player = s.turn): Pos[] {
   return result;
 }
 
-// 壁配置を衝突なしで表すキー。各壁配列64bitを32bitずつに分ける。
-// 最短距離は壁配置とプレイヤーだけで決まり、コマ位置が違っても同じ距離表を再利用できる。
-function wallDistanceKey(s: GameState, p: Player): string {
-  let h0 = 0;
-  let h1 = 0;
-  let v0 = 0;
-  let v1 = 0;
-  for (let i = 0; i < 32; i++) {
-    if (s.hWalls[i]) h0 |= 1 << i;
-    if (s.hWalls[i + 32]) h1 |= 1 << i;
-    if (s.vWalls[i]) v0 |= 1 << i;
-    if (s.vWalls[i + 32]) v1 |= 1 << i;
-  }
-  return `${p}:${h0 >>> 0}:${h1 >>> 0}:${v0 >>> 0}:${v1 >>> 0}`;
-}
-
-const DISTANCE_CACHE_LIMIT = 100_000;
-const distanceCache = new Map<string, Int16Array>();
-export const distanceStats = { calls: 0, misses: 0 };
-
 // ゴール行までの最短歩数（駒は無視、壁のみ考慮）。到達不能なら -1。
-// 同じ壁配置ではゴール側から作った距離表を共有し、コマ位置の要素を読むだけにする。
+// 探索の中で何万回も呼ばれるので、経路は作らず距離だけを求め、作業用の配列も使い回す
+const DIST = new Int16Array(SIZE * SIZE);
 const QUEUE = new Int16Array(SIZE * SIZE);
 
 export function shortestDistance(s: GameState, p: Player): number {
   const start = s.pawns[p];
-  return goalDistances(s, p)[start.y * SIZE + start.x];
+  const goal = goalRow(p);
+  if (start.y === goal) return 0;
+  DIST.fill(-1);
+  const startIdx = start.y * SIZE + start.x;
+  DIST[startIdx] = 0;
+  let head = 0;
+  let tail = 0;
+  QUEUE[tail++] = startIdx;
+  while (head < tail) {
+    const idx = QUEUE[head++];
+    const x = idx % SIZE;
+    const y = (idx - x) / SIZE;
+    for (const [dx, dy] of DIRS) {
+      if (!canStep(s, x, y, dx, dy)) continue;
+      const nIdx = (y + dy) * SIZE + (x + dx);
+      if (DIST[nIdx] !== -1) continue;
+      DIST[nIdx] = DIST[idx] + 1;
+      if (y + dy === goal) return DIST[nIdx];
+      QUEUE[tail++] = nIdx;
+    }
+  }
+  return -1;
 }
 
 // 各マスから p のゴール行までの最短歩数（壁のみ考慮。到達不能は -1）。
-// 結果はキャッシュされるので、呼び出し側では変更しないこと。
+// 結果の配列は次の呼び出しで上書きされるので、すぐに読むこと
+const GOAL_DIST = new Int16Array(SIZE * SIZE);
 
 export function goalDistances(s: GameState, p: Player): Int16Array {
-  distanceStats.calls++;
-  const key = wallDistanceKey(s, p);
-  const cached = distanceCache.get(key);
-  if (cached !== undefined) return cached;
-  distanceStats.misses++;
-
   const goal = goalRow(p);
-  const result = new Int16Array(SIZE * SIZE).fill(-1);
+  GOAL_DIST.fill(-1);
   let head = 0;
   let tail = 0;
   for (let x = 0; x < SIZE; x++) {
     const idx = goal * SIZE + x;
-    result[idx] = 0;
+    GOAL_DIST[idx] = 0;
     QUEUE[tail++] = idx;
   }
   // 壁は両方向をふさぐので、ゴール側から逆にたどっても同じ距離になる
@@ -170,14 +167,12 @@ export function goalDistances(s: GameState, p: Player): Int16Array {
     for (const [dx, dy] of DIRS) {
       if (!canStep(s, x, y, dx, dy)) continue;
       const nIdx = (y + dy) * SIZE + (x + dx);
-      if (result[nIdx] !== -1) continue;
-      result[nIdx] = result[idx] + 1;
+      if (GOAL_DIST[nIdx] !== -1) continue;
+      GOAL_DIST[nIdx] = GOAL_DIST[idx] + 1;
       QUEUE[tail++] = nIdx;
     }
   }
-  if (distanceCache.size >= DISTANCE_CACHE_LIMIT) distanceCache.clear();
-  distanceCache.set(key, result);
-  return result;
+  return GOAL_DIST;
 }
 
 // ゴール行までの最短経路（始点を含む）。到達不能なら null。
