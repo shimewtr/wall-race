@@ -67,6 +67,44 @@ for (const [kind, e] of [...kinds].sort((a, b) => b[1].n - a[1].n)) {
   console.log(`- ${kind}: ${e.n} 局面、平均推定損失 ${(e.regret / e.n).toFixed(1)} 点`);
 }
 
+const wallToWall = meaningful.filter((d) => d.wallComparison);
+if (wallToWall.length) {
+  const orientation = new Map<string, number>();
+  for (const d of wallToWall) {
+    const key = `${d.guideMove.at(-1)} → ${d.expertMove.at(-1)}`;
+    orientation.set(key, (orientation.get(key) ?? 0) + 1);
+  }
+  console.log('\n## 壁 → 壁の比較');
+  console.log(`- 対象: ${wallToWall.length} 局面`);
+  console.log(`- 向き: ${[...orientation].map(([k, n]) => `${k} ${n}`).join('、')}`);
+  const metrics = [
+    ['相手を延ばす歩数', (d: Disagreement) => d.wallComparison!.expert.opDistanceGain - d.wallComparison!.guide.opDistanceGain],
+    ['自分を延ばす歩数（少ないほど良い）', (d: Disagreement) => d.wallComparison!.guide.myDistanceCost - d.wallComparison!.expert.myDistanceCost],
+    ['正味の遠回り', (d: Disagreement) => d.wallComparison!.expert.netGain - d.wallComparison!.guide.netGain],
+    [
+      '壁脅威の差',
+      (d: Disagreement) =>
+        d.wallComparison!.expert.myThreat -
+        d.wallComparison!.expert.opThreat -
+        (d.wallComparison!.guide.myThreat - d.wallComparison!.guide.opThreat),
+    ],
+    [
+      '最短ルート多様性の差',
+      (d: Disagreement) =>
+        d.wallComparison!.expert.myRoutes -
+        d.wallComparison!.expert.opRoutes -
+        (d.wallComparison!.guide.myRoutes - d.wallComparison!.guide.opRoutes),
+    ],
+  ] as const;
+  for (const [name, delta] of metrics) {
+    const values = wallToWall.map(delta);
+    const better = values.filter((v) => v > 0).length;
+    const same = values.filter((v) => v === 0).length;
+    const average = values.reduce((a, b) => a + b, 0) / values.length;
+    console.log(`- ${name}: 探索AIが良い ${better} / 同じ ${same} / 平均差 ${average.toFixed(2)}`);
+  }
+}
+
 const phase = (d: Disagreement) => (d.position.ply < 12 ? '序盤' : d.myWalls + d.opWalls <= 6 ? '終盤' : '中盤');
 const phases = new Map<string, number>();
 for (const d of meaningful) phases.set(phase(d), (phases.get(phase(d)) ?? 0) + 1);

@@ -51,7 +51,21 @@ export interface Disagreement {
   opThreat: number;
   myRoutes: number;
   opRoutes: number;
+  wallComparison?: {
+    guide: WallEffects;
+    expert: WallEffects;
+  };
   guideWon?: boolean;
+}
+
+export interface WallEffects {
+  opDistanceGain: number;
+  myDistanceCost: number;
+  netGain: number;
+  myThreat: number;
+  opThreat: number;
+  myRoutes: number;
+  opRoutes: number;
 }
 
 export interface DiscoveryGame {
@@ -79,6 +93,21 @@ function wallNames(s: GameState, orientation: 'h' | 'v'): string[] {
 
 const rounded = (n: number) => Math.round(n * 10) / 10;
 
+function wallEffects(s: GameState, move: Move, me: Player, op: Player, myDist: number, opDist: number): WallEffects {
+  const after = applyMove(s, move);
+  const opDistanceGain = shortestDistance(after, op) - opDist;
+  const myDistanceCost = shortestDistance(after, me) - myDist;
+  return {
+    opDistanceGain,
+    myDistanceCost,
+    netGain: opDistanceGain - myDistanceCost,
+    myThreat: maxDetour(after, me),
+    opThreat: maxDetour(after, op),
+    myRoutes: rounded(shortestRouteDiversity(after, me)),
+    opRoutes: rounded(shortestRouteDiversity(after, op)),
+  };
+}
+
 export function discoverGame(job: DiscoveryJob): DiscoveryGame {
   const params = job.params ?? GUIDE_CURRENT;
   const rng = rngFrom(job.seed);
@@ -101,6 +130,8 @@ export function discoverGame(job: DiscoveryJob): DiscoveryGame {
       if (!sameMove(guide, expert.move)) {
         const me = s.turn;
         const op = (1 - me) as Player;
+        const myDist = shortestDistance(s, me);
+        const opDist = shortestDistance(s, op);
         const after = applyMove(s, guide);
         // 根の探索と同じ読みの深さになるよう、手引きの手の後を 1 段浅く読む。
         // 手引きの手で即勝ちした場合は損失 0 として、発見候補から自然に外す。
@@ -128,14 +159,21 @@ export function discoverGame(job: DiscoveryJob): DiscoveryGame {
           expertScore: rounded(expert.score),
           guideScore: rounded(guideScore),
           regret: rounded(expert.score - guideScore),
-          myDist: shortestDistance(s, me),
-          opDist: shortestDistance(s, op),
+          myDist,
+          opDist,
           myWalls: s.wallsLeft[me],
           opWalls: s.wallsLeft[op],
           myThreat: maxDetour(s, me),
           opThreat: maxDetour(s, op),
           myRoutes: rounded(shortestRouteDiversity(s, me)),
           opRoutes: rounded(shortestRouteDiversity(s, op)),
+          wallComparison:
+            guide.type === 'wall' && expert.move.type === 'wall'
+              ? {
+                  guide: wallEffects(s, guide, me, op, myDist, opDist),
+                  expert: wallEffects(s, expert.move, me, op, myDist, opDist),
+                }
+              : undefined,
         });
       }
     } else {
