@@ -208,7 +208,8 @@ export function maxWallChain(s: GameState, attacker: Player, victimDist?: number
   const i = c.y * WALL_SLOTS + c.x;
   walls[i] = 1;
   // 1枚目の効果は maxDetour と共通なので、追加分は置いた後に残る「次の1枚」の効果そのもの。
-  const result = computeBestDetour(s, attacker, c.afterDist).value;
+  // この「1枚目を置いた盤面」は実際の探索でも現れうるので、2枚目の計算結果も通常キャッシュへ残す。
+  const result = maxDetour(s, attacker, c.afterDist);
   walls[i] = 0;
   if (wallChainCache.size >= DETOUR_CACHE_LIMIT) wallChainCache.clear();
   wallChainCache.set(key, result);
