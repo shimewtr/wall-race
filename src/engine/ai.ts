@@ -178,7 +178,7 @@ function computeMaxDetour(s: GameState, attacker: Player, victimDist: number): n
 }
 
 // 2 枚の壁を続けて使ったとき、最善の 1 枚だけより何歩多く遠回りさせられるか。
-// 全候補を二重に調べると評価が重くなりすぎるため、1 枚目は即時効果の上位 6 候補に絞る。
+// 全候補を二重に調べると評価が重くなりすぎるため、1 枚目は即時効果が最大の候補に絞る。
 // 同点では盤面を上から走査した順を保ち、同じ局面では常に同じ値になるようにする。
 export function maxWallChain(s: GameState, attacker: Player, victimDist?: number): number {
   if (s.wallsLeft[attacker] < 2) return 0;
@@ -220,7 +220,7 @@ export function maxWallChain(s: GameState, attacker: Player, victimDist?: number
 
   candidates.sort((a, b) => b.dist - a.dist);
   let bestTwo = 0;
-  for (const c of candidates.slice(0, 6)) {
+  for (const c of candidates.slice(0, 1)) {
     const walls = c.o === 'h' ? s.hWalls : s.vWalls;
     const i = c.y * WALL_SLOTS + c.x;
     walls[i] = 1;
