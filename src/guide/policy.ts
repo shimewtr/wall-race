@@ -14,7 +14,7 @@
 //   を確かめ、差がいちばん良くなる手を選ぶ。同じなら壁を温存できる前進を選ぶ。
 // 第 3 版（lookahead: 2）: 相手も第 2 版と同じように考えて返してくる、と想定する。
 
-import { candidateWalls, maxDetour } from '../engine/ai';
+import { candidateWalls, maxDetour, maxWallChain } from '../engine/ai';
 import { type GameState, type Move, type Player, type Pos, applyMove, pawnMoves, shortestDistance } from '../engine/game';
 
 export interface GuideParams {
@@ -31,6 +31,8 @@ export interface GuideParams {
   wallValue?: number;
   // 返しのあと「お互いに壁 1 枚で相手を何歩遠回りさせられるか」の差を、この倍率で形勢に足す
   threatValue?: number;
+  // 返しのあと「壁2枚の連携で追加できる遠回り」の差を、この倍率で形勢に足す
+  chainThreatValue?: number;
   // 相手の最短経路をふさぐ壁だけでなく、自分の経路を守る壁やコマ周りの壁も候補にする
   wideWalls?: boolean;
   // 先読みの評価で、壁を 1 枚使うことに課す歩数換算のコスト
@@ -104,6 +106,9 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number, recent:
         score = lead(reply) + ((params.wallValue ?? 0) + 0.01) * (reply.wallsLeft[me] - reply.wallsLeft[1 - me]);
         if (params.threatValue) {
           score += params.threatValue * (maxDetour(reply, me) - maxDetour(reply, (1 - me) as Player));
+        }
+        if (params.chainThreatValue) {
+          score += params.chainThreatValue * (maxWallChain(reply, me) - maxWallChain(reply, (1 - me) as Player));
         }
         if (m.type === 'wall') {
           score -= params.wallCost ?? 0;
