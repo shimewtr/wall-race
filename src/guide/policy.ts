@@ -37,8 +37,8 @@ export interface GuideParams {
   wallCost?: number;
   // 最後の壁を使い切るときだけ追加で課す歩数換算のコスト
   lastWallCost?: number;
-  // 相手がこの残り歩数以内なら、目前の負けを防ぐため最後の壁の追加コストを免除する
-  waiveLastWallCostAtOpponentDistance?: number;
+  // 相手がこの残り歩数以内で自分が先着できないなら、先読みより即時の足止めを優先する
+  emergencyDefenseAtOpponentDistance?: number;
   // 直近にいたマスへ戻る手に課す歩数換算のコスト（往復を避ける）
   backtrackCost?: number;
   // 相手の壁 1 枚でこの歩数以上遠回りさせられるときだけ、脅威を減らす守りの壁を候補にする
@@ -79,6 +79,11 @@ export const GUIDE_CURRENT: GuideParams = GUIDE_V7;
 const lead = (s: GameState) => shortestDistance(s, (1 - s.turn) as Player) - shortestDistance(s, s.turn);
 
 export function guideMove(s: GameState, params: GuideParams = GUIDE_V1, recent: Pos[] = []): Move {
+  if (params.emergencyDefenseAtOpponentDistance !== undefined) {
+    const myDist = shortestDistance(s, s.turn);
+    const opDist = shortestDistance(s, (1 - s.turn) as Player);
+    if (opDist <= params.emergencyDefenseAtOpponentDistance && myDist > opDist) return simpleMove(s, params, recent);
+  }
   if (params.lookahead) return lookaheadMove(s, params, params.lookahead, recent);
   return simpleMove(s, params, recent);
 }
@@ -109,10 +114,7 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number, recent:
         }
         if (m.type === 'wall') {
           score -= params.wallCost ?? 0;
-          const waiveLastWallCost =
-            params.waiveLastWallCostAtOpponentDistance !== undefined &&
-            shortestDistance(s, op) <= params.waiveLastWallCostAtOpponentDistance;
-          if (s.wallsLeft[me] === 1 && !waiveLastWallCost) score -= params.lastWallCost ?? 0;
+          if (s.wallsLeft[me] === 1) score -= params.lastWallCost ?? 0;
         } else if (recent.some((p) => p.x === m.x && p.y === m.y)) {
           score -= params.backtrackCost ?? 0;
         }
