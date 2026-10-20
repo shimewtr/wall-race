@@ -37,6 +37,8 @@ export interface GuideParams {
   wallCost?: number;
   // 最後の壁を使い切るときだけ追加で課す歩数換算のコスト
   lastWallCost?: number;
+  // 相手がこの残り歩数以内なら、目前の負けを防ぐため最後の壁の追加コストを免除する
+  waiveLastWallCostAtOpponentDistance?: number;
   // 直近にいたマスへ戻る手に課す歩数換算のコスト（往復を避ける）
   backtrackCost?: number;
   // 相手の壁 1 枚でこの歩数以上遠回りさせられるときだけ、脅威を減らす守りの壁を候補にする
@@ -107,7 +109,10 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number, recent:
         }
         if (m.type === 'wall') {
           score -= params.wallCost ?? 0;
-          if (s.wallsLeft[me] === 1) score -= params.lastWallCost ?? 0;
+          const waiveLastWallCost =
+            params.waiveLastWallCostAtOpponentDistance !== undefined &&
+            shortestDistance(s, op) <= params.waiveLastWallCostAtOpponentDistance;
+          if (s.wallsLeft[me] === 1 && !waiveLastWallCost) score -= params.lastWallCost ?? 0;
         } else if (recent.some((p) => p.x === m.x && p.y === m.y)) {
           score -= params.backtrackCost ?? 0;
         }
