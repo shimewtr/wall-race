@@ -115,7 +115,11 @@ class Timeout extends Error {}
 // 壁を置く側のコマの位置は「自分の道までふさぐ壁は置けない」の判定にしか効かず、結果が変わることはまれなので
 // キーに含めない（含めると自分のコマが動くたびに計算し直しになる）。
 // キーは 32 ビットのハッシュなので衝突はありうるが、評価の一項目の近似なので許容する
-const detourCache = new Map<number, number>();
+interface DetourResult {
+  value: number;
+  wall: { x: number; y: number; o: 'h' | 'v'; afterDist: number } | null;
+}
+const detourCache = new Map<number, DetourResult>();
 const wallChainCache = new Map<number, number>();
 // 計測用（profile 実験で使う）
 export const detourStats = { calls: 0, misses: 0 };
@@ -137,21 +141,22 @@ export function maxDetour(s: GameState, attacker: Player, victimDist?: number): 
   detourStats.calls++;
   const key = detourKey(s, attacker);
   const cached = detourCache.get(key);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) return cached.value;
   detourStats.misses++;
-  const result = computeMaxDetour(s, attacker, victimDist ?? shortestDistance(s, (1 - attacker) as Player));
+  const result = computeBestDetour(s, attacker, victimDist ?? shortestDistance(s, (1 - attacker) as Player));
   if (detourCache.size >= DETOUR_CACHE_LIMIT) detourCache.clear();
   detourCache.set(key, result);
-  return result;
+  return result.value;
 }
 
 // 壁を置く側の道までふさいでしまう壁かどうかは確かめない（そうなる壁はまれで、評価の一項目の近似としては許容する。
 // 確かめると 1 回ごとに経路探索が 1 回増える）。相手の道を完全にふさぐ壁は置けないので除く
-function computeMaxDetour(s: GameState, attacker: Player, victimDist: number): number {
+function computeBestDetour(s: GameState, attacker: Player, victimDist: number): DetourResult {
   const victim = (1 - attacker) as Player;
   const path = shortestPath(s, victim);
-  if (!path) return 0;
+  if (!path) return { value: 0, wall: null };
   let best = 0;
+  let bestWall: DetourResult['wall'] = null;
   const tryWall = (x: number, y: number, o: 'h' | 'v') => {
     if (x < 0 || y < 0 || x >= WALL_SLOTS || y >= WALL_SLOTS || !wallFits(s, x, y, o)) return;
     const walls = o === 'h' ? s.hWalls : s.vWalls;
@@ -159,7 +164,10 @@ function computeMaxDetour(s: GameState, attacker: Player, victimDist: number): n
     walls[i] = 1;
     const d = shortestDistance(s, victim);
     walls[i] = 0;
-    if (d >= 0 && d - victimDist > best) best = d - victimDist;
+    if (d >= 0 && (bestWall === null || d - victimDist > best)) {
+      best = Math.max(0, d - victimDist);
+      bestWall = { x, y, o, afterDist: d };
+    }
   };
   for (let k = 0; k + 1 < path.length; k++) {
     const a = path[k];
@@ -174,7 +182,7 @@ function computeMaxDetour(s: GameState, attacker: Player, victimDist: number): n
       tryWall(x, a.y - 1, 'v');
     }
   }
-  return best;
+  return { value: best, wall: bestWall };
 }
 
 // 2 枚の壁を続けて使ったとき、最善の 1 枚だけより何歩多く遠回りさせられるか。
@@ -188,47 +196,20 @@ export function maxWallChain(s: GameState, attacker: Player, victimDist?: number
 
   const victim = (1 - attacker) as Player;
   const baseDist = victimDist ?? shortestDistance(s, victim);
-  const path = shortestPath(s, victim);
-  if (!path) return 0;
-  const candidates: { x: number; y: number; o: 'h' | 'v'; dist: number }[] = [];
-  const seen = new Set<number>();
-  const tryFirst = (x: number, y: number, o: 'h' | 'v') => {
-    if (x < 0 || y < 0 || x >= WALL_SLOTS || y >= WALL_SLOTS || !wallFits(s, x, y, o)) return;
-    const candidateKey = (o === 'h' ? 0 : 64) + y * WALL_SLOTS + x;
-    if (seen.has(candidateKey)) return;
-    seen.add(candidateKey);
-    const walls = o === 'h' ? s.hWalls : s.vWalls;
-    const i = y * WALL_SLOTS + x;
-    walls[i] = 1;
-    const dist = shortestDistance(s, victim);
-    walls[i] = 0;
-    if (dist >= 0) candidates.push({ x, y, o, dist });
-  };
-  for (let k = 0; k + 1 < path.length; k++) {
-    const a = path[k];
-    const b = path[k + 1];
-    if (a.x === b.x) {
-      const y = Math.min(a.y, b.y);
-      tryFirst(a.x, y, 'h');
-      tryFirst(a.x - 1, y, 'h');
-    } else {
-      const x = Math.min(a.x, b.x);
-      tryFirst(x, a.y, 'v');
-      tryFirst(x, a.y - 1, 'v');
-    }
+  let first = detourCache.get(key);
+  if (!first) {
+    first = computeBestDetour(s, attacker, baseDist);
+    if (detourCache.size >= DETOUR_CACHE_LIMIT) detourCache.clear();
+    detourCache.set(key, first);
   }
-
-  candidates.sort((a, b) => b.dist - a.dist);
-  let bestTwo = 0;
-  for (const c of candidates.slice(0, 1)) {
-    const walls = c.o === 'h' ? s.hWalls : s.vWalls;
-    const i = c.y * WALL_SLOTS + c.x;
-    walls[i] = 1;
-    const total = c.dist - baseDist + computeMaxDetour(s, attacker, c.dist);
-    walls[i] = 0;
-    if (total > bestTwo) bestTwo = total;
-  }
-  const result = Math.max(0, bestTwo - maxDetour(s, attacker, baseDist));
+  if (!first.wall) return 0;
+  const c = first.wall;
+  const walls = c.o === 'h' ? s.hWalls : s.vWalls;
+  const i = c.y * WALL_SLOTS + c.x;
+  walls[i] = 1;
+  // 1枚目の効果は maxDetour と共通なので、追加分は置いた後に残る「次の1枚」の効果そのもの。
+  const result = computeBestDetour(s, attacker, c.afterDist).value;
+  walls[i] = 0;
   if (wallChainCache.size >= DETOUR_CACHE_LIMIT) wallChainCache.clear();
   wallChainCache.set(key, result);
   return result;
