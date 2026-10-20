@@ -1,30 +1,30 @@
 {
-  "generation": 10,
+  "generation": 11,
   "weights": {
     "pathDiff": 10,
-    "rowDiff": -0.137,
-    "wallDiff": 24.71,
-    "myWalls": 5.176,
-    "urgency": 680.156,
-    "wallsWhenClose": 54.145,
-    "center": -1.403,
-    "adjacent": 3.022,
-    "lockedRace": 31.432,
-    "wallThreat": 10.65,
-    "wallChain": 1.845,
-    "routeDiversity": -2.579
+    "rowDiff": -1.836,
+    "wallDiff": 21.262,
+    "myWalls": 4.676,
+    "urgency": 674.395,
+    "wallsWhenClose": 53.3,
+    "center": -1.091,
+    "adjacent": 2.626,
+    "lockedRace": 31.178,
+    "wallThreat": 9.179,
+    "wallChain": 3.342,
+    "routeDiversity": -2.91
   },
-  "promotedAt": "2026-10-20T06:01:33.009Z",
+  "promotedAt": "2026-10-20T15:08:26.288Z",
   "source": "actions-1",
   "gate": {
-    "score": 0.563,
+    "score": 0.568,
     "byDepth": {
-      "3": 0.563
+      "3": 0.568
     }
   },
-  "vsInitial": 0.775,
+  "vsInitial": 0.78,
   "vsInitialByDepth": {
-    "3": 0.775
+    "3": 0.78
   },
   "gateVersion": "d3x200-o6t3d2-rnarrow"
 }
