@@ -35,8 +35,6 @@ export interface GuideParams {
   wideWalls?: boolean;
   // 先読みの評価で、壁を 1 枚使うことに課す歩数換算のコスト
   wallCost?: number;
-  // 壁を置き、相手の最善応手を受けても先着できないときだけ追加で課すコスト
-  stillLosingWallCost?: number;
   // 最後の壁を使い切るときだけ追加で課す歩数換算のコスト
   lastWallCost?: number;
   // 直近にいたマスへ戻る手に課す歩数換算のコスト（往復を避ける）
@@ -103,14 +101,12 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number, recent:
         score = -Infinity;
       } else {
         // 自分の手番に戻ったときの歩数の差 ＋ 残り壁の差。wallValue が 0 でも同点なら壁を温存する手を選ぶ
-        const replyLead = lead(reply);
-        score = replyLead + ((params.wallValue ?? 0) + 0.01) * (reply.wallsLeft[me] - reply.wallsLeft[1 - me]);
+        score = lead(reply) + ((params.wallValue ?? 0) + 0.01) * (reply.wallsLeft[me] - reply.wallsLeft[1 - me]);
         if (params.threatValue) {
           score += params.threatValue * (maxDetour(reply, me) - maxDetour(reply, (1 - me) as Player));
         }
         if (m.type === 'wall') {
           score -= params.wallCost ?? 0;
-          if (replyLead < 0) score -= params.stillLosingWallCost ?? 0;
           if (s.wallsLeft[me] === 1) score -= params.lastWallCost ?? 0;
         } else if (recent.some((p) => p.x === m.x && p.y === m.y)) {
           score -= params.backtrackCost ?? 0;
