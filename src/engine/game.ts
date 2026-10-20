@@ -224,37 +224,106 @@ export function goalDistances(s: GameState, p: Player): Int16Array {
 }
 
 // ゴール行までの最短経路（始点を含む）。到達不能なら null。
+const PATH_PREV = new Int16Array(SIZE * SIZE);
+
 export function shortestPath(s: GameState, p: Player): Pos[] | null {
   const start = s.pawns[p];
   const goal = goalRow(p);
   if (start.y === goal) return [start];
-  const prev = new Int16Array(SIZE * SIZE).fill(-1);
+  PATH_PREV.fill(-1);
   const startIdx = start.y * SIZE + start.x;
-  prev[startIdx] = startIdx;
-  const queue = new Int16Array(SIZE * SIZE);
+  PATH_PREV[startIdx] = startIdx;
   let head = 0;
   let tail = 0;
-  queue[tail++] = startIdx;
-  // ゴール方向を先に探索すると経路が自然になる
-  const order = p === 0 ? [DIRS[0], DIRS[2], DIRS[3], DIRS[1]] : [DIRS[1], DIRS[2], DIRS[3], DIRS[0]];
+  QUEUE[tail++] = startIdx;
+  const pathTo = (end: number): Pos[] => {
+    const path: Pos[] = [];
+    for (let i = end; ; i = PATH_PREV[i]) {
+      path.push({ x: i % SIZE, y: Math.floor(i / SIZE) });
+      if (i === startIdx) break;
+    }
+    return path.reverse();
+  };
   while (head < tail) {
-    const idx = queue[head++];
+    const idx = QUEUE[head++];
     const x = idx % SIZE;
     const y = (idx - x) / SIZE;
-    for (const [dx, dy] of order) {
-      if (!canStep(s, x, y, dx, dy)) continue;
-      const nIdx = (y + dy) * SIZE + (x + dx);
-      if (prev[nIdx] !== -1) continue;
-      prev[nIdx] = idx;
-      if (y + dy === goal) {
-        const path: Pos[] = [];
-        for (let i = nIdx; ; i = prev[i]) {
-          path.push({ x: i % SIZE, y: Math.floor(i / SIZE) });
-          if (i === startIdx) break;
+    let nIdx: number;
+
+    // ゴール方向を最初に読む。
+    if (p === 0) {
+      if (
+        y > 0 &&
+        (x === WALL_SLOTS || !s.hWalls[(y - 1) * WALL_SLOTS + x]) &&
+        (x === 0 || !s.hWalls[(y - 1) * WALL_SLOTS + x - 1])
+      ) {
+        nIdx = idx - SIZE;
+        if (PATH_PREV[nIdx] === -1) {
+          PATH_PREV[nIdx] = idx;
+          if (y - 1 === goal) return pathTo(nIdx);
+          QUEUE[tail++] = nIdx;
         }
-        return path.reverse();
       }
-      queue[tail++] = nIdx;
+    } else if (
+      y < WALL_SLOTS &&
+      (x === WALL_SLOTS || !s.hWalls[y * WALL_SLOTS + x]) &&
+      (x === 0 || !s.hWalls[y * WALL_SLOTS + x - 1])
+    ) {
+      nIdx = idx + SIZE;
+      if (PATH_PREV[nIdx] === -1) {
+        PATH_PREV[nIdx] = idx;
+        if (y + 1 === goal) return pathTo(nIdx);
+        QUEUE[tail++] = nIdx;
+      }
+    }
+
+    // 左、右の順。
+    if (
+      x > 0 &&
+      (y === WALL_SLOTS || !s.vWalls[y * WALL_SLOTS + x - 1]) &&
+      (y === 0 || !s.vWalls[(y - 1) * WALL_SLOTS + x - 1])
+    ) {
+      nIdx = idx - 1;
+      if (PATH_PREV[nIdx] === -1) {
+        PATH_PREV[nIdx] = idx;
+        QUEUE[tail++] = nIdx;
+      }
+    }
+    if (
+      x < WALL_SLOTS &&
+      (y === WALL_SLOTS || !s.vWalls[y * WALL_SLOTS + x]) &&
+      (y === 0 || !s.vWalls[(y - 1) * WALL_SLOTS + x])
+    ) {
+      nIdx = idx + 1;
+      if (PATH_PREV[nIdx] === -1) {
+        PATH_PREV[nIdx] = idx;
+        QUEUE[tail++] = nIdx;
+      }
+    }
+
+    // 最後にゴールと逆方向。
+    if (p === 0) {
+      if (
+        y < WALL_SLOTS &&
+        (x === WALL_SLOTS || !s.hWalls[y * WALL_SLOTS + x]) &&
+        (x === 0 || !s.hWalls[y * WALL_SLOTS + x - 1])
+      ) {
+        nIdx = idx + SIZE;
+        if (PATH_PREV[nIdx] === -1) {
+          PATH_PREV[nIdx] = idx;
+          QUEUE[tail++] = nIdx;
+        }
+      }
+    } else if (
+      y > 0 &&
+      (x === WALL_SLOTS || !s.hWalls[(y - 1) * WALL_SLOTS + x]) &&
+      (x === 0 || !s.hWalls[(y - 1) * WALL_SLOTS + x - 1])
+    ) {
+      nIdx = idx - SIZE;
+      if (PATH_PREV[nIdx] === -1) {
+        PATH_PREV[nIdx] = idx;
+        QUEUE[tail++] = nIdx;
+      }
     }
   }
   return null;
