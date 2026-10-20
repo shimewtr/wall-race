@@ -36,6 +36,7 @@ export const FEATURES = {
   adjacent: '相手と隣接している（手番側は飛び越えのチャンス）',
   lockedRace: '壁が尽きて歩数勝負が確定している（相手の壁 0 で自分が先着できる +1、自分の壁 0 で相手が先着できる -1）',
   wallThreat: '壁 1 枚で相手を遠回りさせられる最大の歩数 − 相手が壁 1 枚で自分を遠回りさせられる最大の歩数（壁が尽きた側は 0）',
+  wallChain: '壁 2 枚の連携で増やせる追加の遠回り（2 枚の最大効果 − 1 枚の最大効果）の差',
   routeDiversity: '最短ルートの本数の差（自分 − 相手。2 倍ごとに +1、16 本で頭打ち）',
 } as const;
 
@@ -54,6 +55,7 @@ export const DEFAULT_WEIGHTS: Weights = {
   adjacent: 0,
   lockedRace: 0,
   wallThreat: 0,
+  wallChain: 0,
   routeDiversity: 0,
 };
 
@@ -114,6 +116,7 @@ class Timeout extends Error {}
 // キーに含めない（含めると自分のコマが動くたびに計算し直しになる）。
 // キーは 32 ビットのハッシュなので衝突はありうるが、評価の一項目の近似なので許容する
 const detourCache = new Map<number, number>();
+const wallChainCache = new Map<number, number>();
 // 計測用（profile 実験で使う）
 export const detourStats = { calls: 0, misses: 0 };
 const DETOUR_CACHE_LIMIT = 500_000;
@@ -172,6 +175,63 @@ function computeMaxDetour(s: GameState, attacker: Player, victimDist: number): n
     }
   }
   return best;
+}
+
+// 2 枚の壁を続けて使ったとき、最善の 1 枚だけより何歩多く遠回りさせられるか。
+// 全候補を二重に調べると評価が重くなりすぎるため、1 枚目は即時効果の上位 6 候補に絞る。
+// 同点では盤面を上から走査した順を保ち、同じ局面では常に同じ値になるようにする。
+export function maxWallChain(s: GameState, attacker: Player, victimDist?: number): number {
+  if (s.wallsLeft[attacker] < 2) return 0;
+  const key = detourKey(s, attacker);
+  const cached = wallChainCache.get(key);
+  if (cached !== undefined) return cached;
+
+  const victim = (1 - attacker) as Player;
+  const baseDist = victimDist ?? shortestDistance(s, victim);
+  const path = shortestPath(s, victim);
+  if (!path) return 0;
+  const candidates: { x: number; y: number; o: 'h' | 'v'; dist: number }[] = [];
+  const seen = new Set<number>();
+  const tryFirst = (x: number, y: number, o: 'h' | 'v') => {
+    if (x < 0 || y < 0 || x >= WALL_SLOTS || y >= WALL_SLOTS || !wallFits(s, x, y, o)) return;
+    const candidateKey = (o === 'h' ? 0 : 64) + y * WALL_SLOTS + x;
+    if (seen.has(candidateKey)) return;
+    seen.add(candidateKey);
+    const walls = o === 'h' ? s.hWalls : s.vWalls;
+    const i = y * WALL_SLOTS + x;
+    walls[i] = 1;
+    const dist = shortestDistance(s, victim);
+    walls[i] = 0;
+    if (dist >= 0) candidates.push({ x, y, o, dist });
+  };
+  for (let k = 0; k + 1 < path.length; k++) {
+    const a = path[k];
+    const b = path[k + 1];
+    if (a.x === b.x) {
+      const y = Math.min(a.y, b.y);
+      tryFirst(a.x, y, 'h');
+      tryFirst(a.x - 1, y, 'h');
+    } else {
+      const x = Math.min(a.x, b.x);
+      tryFirst(x, a.y, 'v');
+      tryFirst(x, a.y - 1, 'v');
+    }
+  }
+
+  candidates.sort((a, b) => b.dist - a.dist);
+  let bestTwo = 0;
+  for (const c of candidates.slice(0, 6)) {
+    const walls = c.o === 'h' ? s.hWalls : s.vWalls;
+    const i = c.y * WALL_SLOTS + c.x;
+    walls[i] = 1;
+    const total = c.dist - baseDist + computeMaxDetour(s, attacker, c.dist);
+    walls[i] = 0;
+    if (total > bestTwo) bestTwo = total;
+  }
+  const result = Math.max(0, bestTwo - maxDetour(s, attacker, baseDist));
+  if (wallChainCache.size >= DETOUR_CACHE_LIMIT) wallChainCache.clear();
+  wallChainCache.set(key, result);
+  return result;
 }
 
 // 最短ルートの本数を 16 本まで数え、log2 にした値（1 本=0、2 本=1、4 本=2、…）。
@@ -236,6 +296,7 @@ export function features(
   opDist = shortestDistance(s, (1 - s.turn) as Player),
   withThreat = true,
   withRouteDiversity = true,
+  withWallChain = true,
 ): Weights {
   const me = s.turn;
   const op = (1 - me) as Player;
@@ -254,6 +315,7 @@ export function features(
     lockedRace:
       (s.wallsLeft[op] === 0 && myDist <= opDist ? 1 : 0) - (s.wallsLeft[me] === 0 && opDist < myDist ? 1 : 0),
     wallThreat: withThreat ? maxDetour(s, me, opDist) - maxDetour(s, op, myDist) : 0,
+    wallChain: withWallChain ? maxWallChain(s, me, opDist) - maxWallChain(s, op, myDist) : 0,
     routeDiversity: withRouteDiversity ? shortestRouteDiversity(s, me) - shortestRouteDiversity(s, op) : 0,
   };
 }
@@ -262,7 +324,7 @@ export function features(
 export function evaluate(s: GameState, w: Weights = DEFAULT_WEIGHTS, myDist?: number, opDist?: number): number {
   if (s.winner !== null) return s.winner === s.turn ? WIN : -WIN;
   if (s.draw) return 0;
-  const f = features(s, myDist, opDist, w.wallThreat !== 0, w.routeDiversity !== 0);
+  const f = features(s, myDist, opDist, w.wallThreat !== 0, w.routeDiversity !== 0, w.wallChain !== 0);
   let score = 0;
   for (const k of FEATURE_NAMES) score += w[k] * f[k];
   return score;

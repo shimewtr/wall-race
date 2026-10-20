@@ -17,7 +17,7 @@ import {
   pawnMoves,
   shortestDistance,
 } from './game';
-import { WIN, candidateWalls, features, maxDetour, recentCells, search, shortestRouteDiversity } from './ai';
+import { WIN, candidateWalls, features, maxDetour, maxWallChain, recentCells, search, shortestRouteDiversity } from './ai';
 import { fitCalibration, winRate } from '../train/calibrate';
 import type { MoveRecord } from '../train/record';
 import { rngFrom } from '../train/match';
@@ -437,6 +437,26 @@ describe('特徴量 wallThreat', () => {
     const s = initialState();
     s.wallsLeft[0] = 0;
     expect(features(s, undefined, undefined, false).wallThreat).toBe(0);
+  });
+});
+
+describe('特徴量 wallChain', () => {
+  it('初期局面では 2 枚目にも追加の足止め効果がある', () => {
+    expect(maxWallChain(initialState(), 0)).toBeGreaterThan(0);
+    expect(features(initialState()).wallChain).toBe(0); // お互い同じ
+  });
+
+  it('残り壁が 1 枚以下なら 0', () => {
+    const s = initialState();
+    s.wallsLeft[0] = 1;
+    expect(maxWallChain(s, 0)).toBe(0);
+    expect(features(s).wallChain).toBeLessThan(0);
+  });
+
+  it('重みが 0 なら計算しない', () => {
+    const s = initialState();
+    s.wallsLeft[0] = 1;
+    expect(features(s, undefined, undefined, false, false, false).wallChain).toBe(0);
   });
 });
 

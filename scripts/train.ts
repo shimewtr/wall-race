@@ -194,6 +194,8 @@ const PERTURB: Record<Feature, number> = {
   lockedRace: 5,
   // 1 歩分の重みでチャンピオンに 68% 勝つことを確かめてから学習に入れた
   wallThreat: 2,
+  // 比較実験で有効性と速度を確認するまでは学習対象にしない
+  wallChain: 0,
   // 重み 5 でチャンピオンに 58.5% 勝つことを確かめてから学習に入れた
   routeDiversity: 2,
 };
