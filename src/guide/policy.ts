@@ -41,6 +41,8 @@ export interface GuideParams {
   backtrackCost?: number;
   // 相手の壁 1 枚でこの歩数以上遠回りさせられるときだけ、脅威を減らす守りの壁を候補にする
   guardThreatAtLeast?: number;
+  // まだ誰も壁を置いていない間だけ、相手がこの歩数以内に来るまで最初の壁を待つ
+  openingWallAtOpponentDistance?: number;
 }
 
 export const GUIDE_V1: GuideParams = {
@@ -85,7 +87,11 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number, recent:
   const me = s.turn;
   const op = (1 - me) as Player;
   // 相手がまだ遠いうちは壁を候補に入れない（温存）
-  const walls = shortestDistance(s, op) <= params.saveWallsWhileOpponentFarther ? guideWalls(s, params) : [];
+  const opDistance = shortestDistance(s, op);
+  const beforeFirstWall = s.wallsLeft[0] + s.wallsLeft[1] === 20;
+  const openingAllowsWall =
+    !beforeFirstWall || params.openingWallAtOpponentDistance === undefined || opDistance <= params.openingWallAtOpponentDistance;
+  const walls = opDistance <= params.saveWallsWhileOpponentFarther && openingAllowsWall ? guideWalls(s, params) : [];
   const candidates: Move[] = [...pawnMoves(s).map((p): Move => ({ type: 'pawn', x: p.x, y: p.y })), ...walls];
   let best = candidates[0];
   let bestScore = -Infinity;
@@ -149,6 +155,9 @@ function simpleMove(s: GameState, params: GuideParams, recent: Pos[]): Move {
   const wantWall =
     s.wallsLeft[me] > 0 &&
     opDist <= params.saveWallsWhileOpponentFarther &&
+    (s.wallsLeft[0] + s.wallsLeft[1] < 20 ||
+      params.openingWallAtOpponentDistance === undefined ||
+      opDist <= params.openingWallAtOpponentDistance) &&
     (lead < 0 || (lead <= params.defendLead && opDist <= params.holdUntil));
 
   if (wantWall) {

@@ -241,6 +241,17 @@ describe('手引き AI', () => {
     expect(shortestDistance(applyMove(s, m), 1)).toBeGreaterThan(3);
   });
 
+  it('序盤限定の温存は最初の壁だけを待つ', () => {
+    const s = initialState();
+    s.pawns[1] = { x: 1, y: 5 }; // 相手は残り3歩で、現行版なら壁を置く
+    const params = { ...GUIDE_CURRENT, openingWallAtOpponentDistance: 2 };
+    expect(guideMove(s, params).type).toBe('pawn');
+
+    // どちらかが最初の壁を置いた後は、相手との距離にかかわらず通常の判断へ戻る
+    s.wallsLeft[1] = 9;
+    expect(guideMove(s, params).type).toBe('wall');
+  });
+
   it('大きな壁脅威があるときだけ守りの壁を候補にする', () => {
     const moves = 'e2 f9 e3 f8 e4 g8 e5 g7 e6 g6 e7 g5 e8 e8h g4h d7v e7 f5 e4h e5 d5v g8h g5v h8v h3h f3v';
     let s = initialState();
