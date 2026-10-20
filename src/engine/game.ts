@@ -133,13 +133,61 @@ export function shortestDistance(s: GameState, p: Player): number {
     const idx = QUEUE[head++];
     const x = idx % SIZE;
     const y = (idx - x) / SIZE;
-    for (const [dx, dy] of DIRS) {
-      if (!canStep(s, x, y, dx, dy)) continue;
-      const nIdx = (y + dy) * SIZE + (x + dx);
-      if (DIST[nIdx] !== -1) continue;
-      DIST[nIdx] = DIST[idx] + 1;
-      if (y + dy === goal) return DIST[nIdx];
-      QUEUE[tail++] = nIdx;
+    const nextDistance = DIST[idx] + 1;
+    let nIdx: number;
+
+    // 上。canStep と同じ壁判定を9×9固定盤向けに直接展開する。
+    if (
+      y > 0 &&
+      (x === WALL_SLOTS || !s.hWalls[(y - 1) * WALL_SLOTS + x]) &&
+      (x === 0 || !s.hWalls[(y - 1) * WALL_SLOTS + x - 1])
+    ) {
+      nIdx = idx - SIZE;
+      if (DIST[nIdx] === -1) {
+        DIST[nIdx] = nextDistance;
+        if (y - 1 === goal) return nextDistance;
+        QUEUE[tail++] = nIdx;
+      }
+    }
+
+    // 下
+    if (
+      y < WALL_SLOTS &&
+      (x === WALL_SLOTS || !s.hWalls[y * WALL_SLOTS + x]) &&
+      (x === 0 || !s.hWalls[y * WALL_SLOTS + x - 1])
+    ) {
+      nIdx = idx + SIZE;
+      if (DIST[nIdx] === -1) {
+        DIST[nIdx] = nextDistance;
+        if (y + 1 === goal) return nextDistance;
+        QUEUE[tail++] = nIdx;
+      }
+    }
+
+    // 左
+    if (
+      x > 0 &&
+      (y === WALL_SLOTS || !s.vWalls[y * WALL_SLOTS + x - 1]) &&
+      (y === 0 || !s.vWalls[(y - 1) * WALL_SLOTS + x - 1])
+    ) {
+      nIdx = idx - 1;
+      if (DIST[nIdx] === -1) {
+        DIST[nIdx] = nextDistance;
+        QUEUE[tail++] = nIdx;
+      }
+    }
+
+    // 右
+    if (
+      x < WALL_SLOTS &&
+      (y === WALL_SLOTS || !s.vWalls[y * WALL_SLOTS + x]) &&
+      (y === 0 || !s.vWalls[(y - 1) * WALL_SLOTS + x])
+    ) {
+      nIdx = idx + 1;
+      if (DIST[nIdx] === -1) {
+        DIST[nIdx] = nextDistance;
+        QUEUE[tail++] = nIdx;
+      }
     }
   }
   return -1;
