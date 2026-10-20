@@ -31,6 +31,8 @@ export interface GuideParams {
   wallValue?: number;
   // 返しのあと「お互いに壁 1 枚で相手を何歩遠回りさせられるか」の差を、この倍率で形勢に足す
   threatValue?: number;
+  // 壁候補どうしを比べるときだけ、置いた後に残る壁脅威の差へ追加する倍率
+  wallPlacementThreatValue?: number;
   // 相手の最短経路をふさぐ壁だけでなく、自分の経路を守る壁やコマ周りの壁も候補にする
   wideWalls?: boolean;
   // 先読みの評価で、壁を 1 枚使うことに課す歩数換算のコスト
@@ -87,11 +89,12 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number, recent:
   // 相手がまだ遠いうちは壁を候補に入れない（温存）
   const walls = shortestDistance(s, op) <= params.saveWallsWhileOpponentFarther ? guideWalls(s, params) : [];
   const candidates: Move[] = [...pawnMoves(s).map((p): Move => ({ type: 'pawn', x: p.x, y: p.y })), ...walls];
-  let best = candidates[0];
-  let bestScore = -Infinity;
+  let bestPawn = { move: candidates[0], score: -Infinity };
+  let bestWall: { move: Move; score: number; rank: number } | undefined;
   for (const m of candidates) {
     const after = applyMove(s, m);
     let score: number;
+    let wallPlacementBonus = 0;
     if (after.winner === me) {
       score = Infinity;
     } else {
@@ -106,6 +109,10 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number, recent:
           score += params.threatValue * (maxDetour(reply, me) - maxDetour(reply, (1 - me) as Player));
         }
         if (m.type === 'wall') {
+          if (params.wallPlacementThreatValue) {
+            wallPlacementBonus =
+              params.wallPlacementThreatValue * (maxDetour(reply, me) - maxDetour(reply, (1 - me) as Player));
+          }
           score -= params.wallCost ?? 0;
           if (s.wallsLeft[me] === 1) score -= params.lastWallCost ?? 0;
         } else if (recent.some((p) => p.x === m.x && p.y === m.y)) {
@@ -113,12 +120,15 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number, recent:
         }
       }
     }
-    if (score > bestScore) {
-      bestScore = score;
-      best = m;
+    if (m.type === 'wall') {
+      const rank = score + wallPlacementBonus;
+      if (!bestWall || rank > bestWall.rank) bestWall = { move: m, score, rank };
+    } else if (score > bestPawn.score) {
+      bestPawn = { move: m, score };
     }
   }
-  return best;
+  // 壁を使うかどうかは従来の score で決め、追加値は壁候補どうしの順位だけに使う。
+  return bestWall && bestWall.score > bestPawn.score ? bestWall.move : bestPawn.move;
 }
 
 function guideWalls(s: GameState, params: GuideParams): Move[] {
