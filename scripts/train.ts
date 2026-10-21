@@ -152,9 +152,31 @@ function loadLeague(): Weights[] {
 // ---- git ----
 const git = (...a: string[]) => execFileSync('git', a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
+// Actions の一時的な通信断で45分分の学習を失わないよう、リモート通信だけ再試行する。
+// timeout を付け、今回のように接続不能のまま2分以上待ち続けることも防ぐ。
+const wait = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const remoteGit = (...a: string[]) => {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return execFileSync('git', a, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 60_000,
+      }).trim();
+    } catch (e) {
+      if (attempt === 3) throw e;
+      const message = e instanceof Error ? e.message.split('\n').at(-1) : String(e);
+      const delay = attempt * 5_000;
+      console.warn(`  git ${a[0]} に失敗（${message}）。${delay / 1000}秒後に再試行します`);
+      wait(delay);
+    }
+  }
+  throw new Error('git リモート通信の再試行に失敗しました');
+};
+
 function pull() {
   if (!SYNC) return;
-  git('pull', '--rebase', '--autostash', '--quiet', 'origin', 'main');
+  remoteGit('pull', '--rebase', '--autostash', '--quiet', 'origin', 'main');
 }
 
 function ensureCleanTraining() {
@@ -171,7 +193,7 @@ function commitAndPush(message: string): boolean {
   git('add', '--', 'training');
   git('commit', '--quiet', '-m', message, '--', 'training');
   try {
-    git('push', '--quiet', 'origin', 'HEAD:main');
+    remoteGit('push', '--quiet', 'origin', 'HEAD:main');
     return true;
   } catch {
     // 他所が先に push した。自分のコミットを取り消して最新から足し直す
