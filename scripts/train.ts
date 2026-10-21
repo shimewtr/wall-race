@@ -47,7 +47,9 @@ const SOURCE = args.source ?? (process.env.GITHUB_ACTIONS ? 'actions' : 'mac');
 const DEPTH = 3;
 // 最善から 0.1 歩以内の手をランダムに選ぶ。弱い手は選ばずに棋譜の多様性を確保する
 const MARGIN = 1;
-const PAIRS_PER_ITER = 16;
+// 16組では128組基準の勾配と同符号になる割合が55.7%しかなかった。
+// 64組なら81.8%で、RMSEも0.0905から0.0457へ半減したため、反復数より方向の確かさを優先する。
+const PAIRS_PER_ITER = 64;
 // 判定に使う読みの深さと対局数（深さごとに測って平均する）
 const GATE_SUITE: Record<number, number> = { [DEPTH]: 200 };
 // 判定条件の識別子（深さ・対局数・序盤のばらけさせ方・根の壁候補）
@@ -431,6 +433,7 @@ async function runOnce(pool: PairPool, minutes: number) {
         championGeneration: generation,
         promoted,
         reset,
+        pairsPerIteration: PAIRS_PER_ITER,
         perturbMultiplier: PERTURB_MULTIPLIER,
         learningRateBase: LEARNING_RATE_BASE,
       })}\n`,
