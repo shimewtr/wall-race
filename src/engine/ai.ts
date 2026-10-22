@@ -187,15 +187,20 @@ export function maxNetDetour(
     const i = y * WALL_SLOTS + x;
     walls[i] = 1;
     const victimAfter = shortestDistance(s, victim);
-    const attackerAfter = cutsPath(attackerPath, x, y, o) ? shortestDistance(s, attacker) : attackerDist;
+    const raw = victimAfter < 0 ? 0 : Math.max(0, victimAfter - victimDist);
+    // 自分への遠回りは 0 以上なので、raw が現在値を超えない壁は正味でも更新できない。
+    // その場合は自分側の経路探索を省く。
+    const attackerAfter =
+      raw > best && cutsPath(attackerPath, x, y, o) ? shortestDistance(s, attacker) : attackerDist;
     walls[i] = 0;
     if (victimAfter < 0) return;
-    const raw = Math.max(0, victimAfter - victimDist);
     if (rawWall === null || raw > rawBest) {
       rawBest = raw;
       rawWall = { x, y, o, afterDist: victimAfter };
     }
-    if (attackerAfter >= 0) best = Math.max(best, raw - Math.max(0, attackerAfter - attackerDist));
+    if (raw > best && attackerAfter >= 0) {
+      best = Math.max(best, raw - Math.max(0, attackerAfter - attackerDist));
+    }
   };
   for (let k = 0; k + 1 < victimPath.length; k++) {
     const a = victimPath[k];
