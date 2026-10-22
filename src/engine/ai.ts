@@ -157,8 +157,8 @@ export function maxDetour(s: GameState, attacker: Player, victimDist?: number): 
   return result.value;
 }
 
-// maxDetour が選んだ壁について、相手の遠回りから自分の遠回りを引いた正味の効果。
-// 全壁で自分側の距離まで測ると重いため、既存計算の最善壁1枚だけを補正する。
+// 壁1枚による相手の遠回りから、自分の遠回りを引いた正味の最大効果。
+// 同じ走査で通常の maxDetour も計算・保存し、両特徴を使うときの二重計算を避ける。
 export function maxNetDetour(
   s: GameState,
   attacker: Player,
@@ -170,20 +170,49 @@ export function maxNetDetour(
   const cached = netDetourCache.get(key);
   if (cached !== undefined) return cached;
 
-  let raw = detourCache.get(detourKey(s, attacker));
-  if (!raw) {
-    raw = computeBestDetour(s, attacker, victimDist);
-    if (detourCache.size >= DETOUR_CACHE_LIMIT) detourCache.clear();
-    detourCache.set(detourKey(s, attacker), raw);
+  const victim = (1 - attacker) as Player;
+  const victimPath = shortestPath(s, victim);
+  const attackerPath = shortestPath(s, attacker);
+  if (!victimPath || !attackerPath) return 0;
+  const seen = new Set<number>();
+  let best = 0;
+  let rawBest = 0;
+  let rawWall: DetourResult['wall'] = null;
+  const tryWall = (x: number, y: number, o: 'h' | 'v') => {
+    if (x < 0 || y < 0 || x >= WALL_SLOTS || y >= WALL_SLOTS || !wallFits(s, x, y, o)) return;
+    const wallKey = (o === 'h' ? 0 : WALL_SLOTS * WALL_SLOTS) + y * WALL_SLOTS + x;
+    if (seen.has(wallKey)) return;
+    seen.add(wallKey);
+    const walls = o === 'h' ? s.hWalls : s.vWalls;
+    const i = y * WALL_SLOTS + x;
+    walls[i] = 1;
+    const victimAfter = shortestDistance(s, victim);
+    const attackerAfter = cutsPath(attackerPath, x, y, o) ? shortestDistance(s, attacker) : attackerDist;
+    walls[i] = 0;
+    if (victimAfter < 0) return;
+    const raw = Math.max(0, victimAfter - victimDist);
+    if (rawWall === null || raw > rawBest) {
+      rawBest = raw;
+      rawWall = { x, y, o, afterDist: victimAfter };
+    }
+    if (attackerAfter >= 0) best = Math.max(best, raw - Math.max(0, attackerAfter - attackerDist));
+  };
+  for (let k = 0; k + 1 < victimPath.length; k++) {
+    const a = victimPath[k];
+    const b = victimPath[k + 1];
+    if (a.x === b.x) {
+      const y = Math.min(a.y, b.y);
+      tryWall(a.x, y, 'h');
+      tryWall(a.x - 1, y, 'h');
+    } else {
+      const x = Math.min(a.x, b.x);
+      tryWall(x, a.y, 'v');
+      tryWall(x, a.y - 1, 'v');
+    }
   }
-  if (!raw.wall) return 0;
-  const c = raw.wall;
-  const walls = c.o === 'h' ? s.hWalls : s.vWalls;
-  const i = c.y * WALL_SLOTS + c.x;
-  walls[i] = 1;
-  const attackerAfter = shortestDistance(s, attacker);
-  walls[i] = 0;
-  const best = attackerAfter < 0 ? 0 : Math.max(0, raw.value - Math.max(0, attackerAfter - attackerDist));
+  const rawKey = detourKey(s, attacker);
+  if (detourCache.size >= DETOUR_CACHE_LIMIT) detourCache.clear();
+  detourCache.set(rawKey, { value: rawBest, wall: rawWall });
   if (netDetourCache.size >= DETOUR_CACHE_LIMIT) netDetourCache.clear();
   netDetourCache.set(key, best);
   return best;
@@ -325,6 +354,9 @@ export function features(
   const op = (1 - me) as Player;
   const my = s.pawns[me];
   const o = s.pawns[op];
+  // 正味効果の計算は通常の壁脅威キャッシュも埋めるので先に行う。
+  const myNetThreat = withNetWallThreat ? maxNetDetour(s, me, opDist, myDist) : 0;
+  const opNetThreat = withNetWallThreat ? maxNetDetour(s, op, myDist, opDist) : 0;
   return {
     pathDiff: opDist - myDist,
     rowDiff: Math.abs(goalRow(op) - o.y) - Math.abs(goalRow(me) - my.y),
@@ -338,9 +370,7 @@ export function features(
     lockedRace:
       (s.wallsLeft[op] === 0 && myDist <= opDist ? 1 : 0) - (s.wallsLeft[me] === 0 && opDist < myDist ? 1 : 0),
     wallThreat: withThreat ? maxDetour(s, me, opDist) - maxDetour(s, op, myDist) : 0,
-    netWallThreat: withNetWallThreat
-      ? maxNetDetour(s, me, opDist, myDist) - maxNetDetour(s, op, myDist, opDist)
-      : 0,
+    netWallThreat: myNetThreat - opNetThreat,
     wallChain: withWallChain ? maxWallChain(s, me, opDist) - maxWallChain(s, op, myDist) : 0,
     routeDiversity: withRouteDiversity ? shortestRouteDiversity(s, me) - shortestRouteDiversity(s, op) : 0,
   };
