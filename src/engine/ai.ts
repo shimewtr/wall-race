@@ -157,8 +157,8 @@ export function maxDetour(s: GameState, attacker: Player, victimDist?: number): 
   return result.value;
 }
 
-// 壁1枚による相手の遠回りから、自分の遠回りを引いた正味の最大効果。
-// maxDetour は自分の道を悪化させる壁も高く評価しうるため、その近似誤差を別特徴として補う。
+// maxDetour が選んだ壁について、相手の遠回りから自分の遠回りを引いた正味の効果。
+// 全壁で自分側の距離まで測ると重いため、既存計算の最善壁1枚だけを補正する。
 export function maxNetDetour(
   s: GameState,
   attacker: Player,
@@ -170,39 +170,20 @@ export function maxNetDetour(
   const cached = netDetourCache.get(key);
   if (cached !== undefined) return cached;
 
-  const victim = (1 - attacker) as Player;
-  const victimPath = shortestPath(s, victim);
-  const attackerPath = shortestPath(s, attacker);
-  if (!victimPath || !attackerPath) return 0;
-  const seen = new Set<number>();
-  let best = 0;
-  const tryWall = (x: number, y: number, o: 'h' | 'v') => {
-    if (x < 0 || y < 0 || x >= WALL_SLOTS || y >= WALL_SLOTS || !wallFits(s, x, y, o)) return;
-    const key = (o === 'h' ? 0 : WALL_SLOTS * WALL_SLOTS) + y * WALL_SLOTS + x;
-    if (seen.has(key)) return;
-    seen.add(key);
-    const walls = o === 'h' ? s.hWalls : s.vWalls;
-    const i = y * WALL_SLOTS + x;
-    walls[i] = 1;
-    const victimAfter = shortestDistance(s, victim);
-    const attackerAfter = cutsPath(attackerPath, x, y, o) ? shortestDistance(s, attacker) : attackerDist;
-    walls[i] = 0;
-    if (victimAfter < 0 || attackerAfter < 0) return;
-    best = Math.max(best, victimAfter - victimDist - Math.max(0, attackerAfter - attackerDist));
-  };
-  for (let k = 0; k + 1 < victimPath.length; k++) {
-    const a = victimPath[k];
-    const b = victimPath[k + 1];
-    if (a.x === b.x) {
-      const y = Math.min(a.y, b.y);
-      tryWall(a.x, y, 'h');
-      tryWall(a.x - 1, y, 'h');
-    } else {
-      const x = Math.min(a.x, b.x);
-      tryWall(x, a.y, 'v');
-      tryWall(x, a.y - 1, 'v');
-    }
+  let raw = detourCache.get(detourKey(s, attacker));
+  if (!raw) {
+    raw = computeBestDetour(s, attacker, victimDist);
+    if (detourCache.size >= DETOUR_CACHE_LIMIT) detourCache.clear();
+    detourCache.set(detourKey(s, attacker), raw);
   }
+  if (!raw.wall) return 0;
+  const c = raw.wall;
+  const walls = c.o === 'h' ? s.hWalls : s.vWalls;
+  const i = c.y * WALL_SLOTS + c.x;
+  walls[i] = 1;
+  const attackerAfter = shortestDistance(s, attacker);
+  walls[i] = 0;
+  const best = attackerAfter < 0 ? 0 : Math.max(0, raw.value - Math.max(0, attackerAfter - attackerDist));
   if (netDetourCache.size >= DETOUR_CACHE_LIMIT) netDetourCache.clear();
   netDetourCache.set(key, best);
   return best;
