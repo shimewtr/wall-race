@@ -17,7 +17,17 @@ import {
   pawnMoves,
   shortestDistance,
 } from './game';
-import { WIN, candidateWalls, features, maxDetour, maxWallChain, recentCells, search, shortestRouteDiversity } from './ai';
+import {
+  WIN,
+  candidateWalls,
+  features,
+  maxDetour,
+  maxNetDetour,
+  maxWallChain,
+  recentCells,
+  search,
+  shortestRouteDiversity,
+} from './ai';
 import { fitCalibration, winRate } from '../train/calibrate';
 import type { MoveRecord } from '../train/record';
 import { rngFrom } from '../train/match';
@@ -437,6 +447,23 @@ describe('特徴量 wallThreat', () => {
     const s = initialState();
     s.wallsLeft[0] = 0;
     expect(features(s, undefined, undefined, false).wallThreat).toBe(0);
+  });
+});
+
+describe('特徴量 netWallThreat', () => {
+  it('両者の経路が離れていれば自分を遠回りさせず相手を 1 歩遠回りさせられる', () => {
+    const s = initialState();
+    s.pawns[0].x = 0;
+    expect(maxNetDetour(s, 0)).toBe(1);
+    expect(features(s).netWallThreat).toBeLessThan(0); // 相手側にはさらに有効な壁がある
+  });
+
+  it('壁が尽きていれば 0', () => {
+    const s = initialState();
+    s.pawns[0].x = 0;
+    s.wallsLeft[0] = 0;
+    expect(maxNetDetour(s, 0)).toBe(0);
+    expect(features(s).netWallThreat).toBeLessThan(0);
   });
 });
 

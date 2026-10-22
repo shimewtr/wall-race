@@ -105,13 +105,15 @@ const writeJson = (path: string, v: unknown) => writeFileSync(path, `${JSON.stri
 const round = (w: Weights): Weights =>
   Object.fromEntries(FEATURE_NAMES.map((k) => [k, Math.round(w[k] * 1000) / 1000])) as Weights;
 
-const FEATURE_SEED_VERSION = 2;
+const FEATURE_SEED_VERSION = 3;
 // routeDiversity=5 はチャンピオンに 58.5%（400 局）。新しいチャンピオンに入るまではリセット後も維持する。
 const trainingBaseline = (w: Partial<Weights>): Weights => {
   const baseline = withDefaults(w);
   if (baseline.routeDiversity === 0) baseline.routeDiversity = 5;
   // wallChain=2 は第9世代に55.0%（400局）。新しいチャンピオンに入るまではリセット後も維持する。
   if (baseline.wallChain === 0) baseline.wallChain = 2;
+  // netWallThreat=5 は第11世代に52.9%（1600局）。新しいチャンピオンに入るまではリセット後も維持する。
+  if (baseline.netWallThreat === 0) baseline.netWallThreat = 5;
   return baseline;
 };
 
@@ -121,6 +123,7 @@ function loadState(): State {
     const theta = withDefaults(s.theta);
     if ((s.featureSeedVersion ?? 0) < 1) theta.routeDiversity = 5;
     if ((s.featureSeedVersion ?? 0) < 2) theta.wallChain = 2;
+    if ((s.featureSeedVersion ?? 0) < 3) theta.netWallThreat = 5;
     return { ...s, featureSeedVersion: FEATURE_SEED_VERSION, theta };
   }
   return {
@@ -221,6 +224,8 @@ const PERTURB: Record<Feature, number> = {
   lockedRace: 5,
   // 1 歩分の重みでチャンピオンに 68% 勝つことを確かめてから学習に入れた
   wallThreat: 2,
+  // 重み 5 で第11世代に52.9%（1600局）。枝刈り後の追加時間も約12%に抑えてから学習に入れた
+  netWallThreat: 2,
   // 重み 2 でチャンピオンに 55.0% 勝ち、候補を1枚に絞って速度も確認してから学習に入れた
   wallChain: 1,
   // 重み 5 でチャンピオンに 58.5% 勝つことを確かめてから学習に入れた
