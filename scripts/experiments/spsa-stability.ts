@@ -48,6 +48,7 @@ const perturb: Record<Feature, number> = {
   adjacent: 2,
   lockedRace: 5,
   wallThreat: 2,
+  netWallThreat: 0,
   wallChain: 1,
   routeDiversity: 2,
 };

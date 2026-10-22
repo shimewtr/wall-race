@@ -221,6 +221,8 @@ const PERTURB: Record<Feature, number> = {
   lockedRace: 5,
   // 1 歩分の重みでチャンピオンに 68% 勝つことを確かめてから学習に入れた
   wallThreat: 2,
+  // 実験候補。compare.tsで勝ち越すまでは学習では動かさない
+  netWallThreat: 0,
   // 重み 2 でチャンピオンに 55.0% 勝ち、候補を1枚に絞って速度も確認してから学習に入れた
   wallChain: 1,
   // 重み 5 でチャンピオンに 58.5% 勝つことを確かめてから学習に入れた

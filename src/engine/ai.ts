@@ -36,6 +36,7 @@ export const FEATURES = {
   adjacent: '相手と隣接している（手番側は飛び越えのチャンス）',
   lockedRace: '壁が尽きて歩数勝負が確定している（相手の壁 0 で自分が先着できる +1、自分の壁 0 で相手が先着できる -1）',
   wallThreat: '壁 1 枚で相手を遠回りさせられる最大の歩数 − 相手が壁 1 枚で自分を遠回りさせられる最大の歩数（壁が尽きた側は 0）',
+  netWallThreat: '壁1枚の相手への遠回りから自分への遠回りを引いた最大値の差（自分 − 相手）',
   wallChain: '壁 2 枚の連携で増やせる追加の遠回り（2 枚の最大効果 − 1 枚の最大効果）の差',
   routeDiversity: '最短ルートの本数の差（自分 − 相手。2 倍ごとに +1、16 本で頭打ち）',
 } as const;
@@ -55,6 +56,7 @@ export const DEFAULT_WEIGHTS: Weights = {
   adjacent: 0,
   lockedRace: 0,
   wallThreat: 0,
+  netWallThreat: 0,
   wallChain: 0,
   routeDiversity: 0,
 };
@@ -120,6 +122,7 @@ interface DetourResult {
   wall: { x: number; y: number; o: 'h' | 'v'; afterDist: number } | null;
 }
 const detourCache = new Map<number, DetourResult>();
+const netDetourCache = new Map<number, number>();
 const wallChainCache = new Map<number, number>();
 // 計測用（profile 実験で使う）
 export const detourStats = { calls: 0, misses: 0 };
@@ -135,6 +138,11 @@ function detourKey(s: GameState, attacker: Player): number {
   return Math.imul(h ^ (attacker * 81 + v.y * 9 + v.x), 0x01000193) >>> 0;
 }
 
+function netDetourKey(s: GameState, attacker: Player): number {
+  const a = s.pawns[attacker];
+  return Math.imul(detourKey(s, attacker) ^ (201 + a.y * SIZE + a.x), 0x01000193) >>> 0;
+}
+
 // attacker が壁 1 枚で相手（victim）の最短歩数を最大何歩伸ばせるか。壁が尽きていれば 0
 export function maxDetour(s: GameState, attacker: Player, victimDist?: number): number {
   if (s.wallsLeft[attacker] <= 0) return 0;
@@ -147,6 +155,57 @@ export function maxDetour(s: GameState, attacker: Player, victimDist?: number): 
   if (detourCache.size >= DETOUR_CACHE_LIMIT) detourCache.clear();
   detourCache.set(key, result);
   return result.value;
+}
+
+// 壁1枚による相手の遠回りから、自分の遠回りを引いた正味の最大効果。
+// maxDetour は自分の道を悪化させる壁も高く評価しうるため、その近似誤差を別特徴として補う。
+export function maxNetDetour(
+  s: GameState,
+  attacker: Player,
+  victimDist = shortestDistance(s, (1 - attacker) as Player),
+  attackerDist = shortestDistance(s, attacker),
+): number {
+  if (s.wallsLeft[attacker] <= 0) return 0;
+  const key = netDetourKey(s, attacker);
+  const cached = netDetourCache.get(key);
+  if (cached !== undefined) return cached;
+
+  const victim = (1 - attacker) as Player;
+  const victimPath = shortestPath(s, victim);
+  const attackerPath = shortestPath(s, attacker);
+  if (!victimPath || !attackerPath) return 0;
+  const seen = new Set<number>();
+  let best = 0;
+  const tryWall = (x: number, y: number, o: 'h' | 'v') => {
+    if (x < 0 || y < 0 || x >= WALL_SLOTS || y >= WALL_SLOTS || !wallFits(s, x, y, o)) return;
+    const key = (o === 'h' ? 0 : WALL_SLOTS * WALL_SLOTS) + y * WALL_SLOTS + x;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const walls = o === 'h' ? s.hWalls : s.vWalls;
+    const i = y * WALL_SLOTS + x;
+    walls[i] = 1;
+    const victimAfter = shortestDistance(s, victim);
+    const attackerAfter = cutsPath(attackerPath, x, y, o) ? shortestDistance(s, attacker) : attackerDist;
+    walls[i] = 0;
+    if (victimAfter < 0 || attackerAfter < 0) return;
+    best = Math.max(best, victimAfter - victimDist - Math.max(0, attackerAfter - attackerDist));
+  };
+  for (let k = 0; k + 1 < victimPath.length; k++) {
+    const a = victimPath[k];
+    const b = victimPath[k + 1];
+    if (a.x === b.x) {
+      const y = Math.min(a.y, b.y);
+      tryWall(a.x, y, 'h');
+      tryWall(a.x - 1, y, 'h');
+    } else {
+      const x = Math.min(a.x, b.x);
+      tryWall(x, a.y, 'v');
+      tryWall(x, a.y - 1, 'v');
+    }
+  }
+  if (netDetourCache.size >= DETOUR_CACHE_LIMIT) netDetourCache.clear();
+  netDetourCache.set(key, best);
+  return best;
 }
 
 // 壁を置く側の道までふさいでしまう壁かどうかは確かめない（そうなる壁はまれで、評価の一項目の近似としては許容する。
@@ -279,6 +338,7 @@ export function features(
   withThreat = true,
   withRouteDiversity = true,
   withWallChain = true,
+  withNetWallThreat = true,
 ): Weights {
   const me = s.turn;
   const op = (1 - me) as Player;
@@ -297,6 +357,9 @@ export function features(
     lockedRace:
       (s.wallsLeft[op] === 0 && myDist <= opDist ? 1 : 0) - (s.wallsLeft[me] === 0 && opDist < myDist ? 1 : 0),
     wallThreat: withThreat ? maxDetour(s, me, opDist) - maxDetour(s, op, myDist) : 0,
+    netWallThreat: withNetWallThreat
+      ? maxNetDetour(s, me, opDist, myDist) - maxNetDetour(s, op, myDist, opDist)
+      : 0,
     wallChain: withWallChain ? maxWallChain(s, me, opDist) - maxWallChain(s, op, myDist) : 0,
     routeDiversity: withRouteDiversity ? shortestRouteDiversity(s, me) - shortestRouteDiversity(s, op) : 0,
   };
@@ -306,7 +369,15 @@ export function features(
 export function evaluate(s: GameState, w: Weights = DEFAULT_WEIGHTS, myDist?: number, opDist?: number): number {
   if (s.winner !== null) return s.winner === s.turn ? WIN : -WIN;
   if (s.draw) return 0;
-  const f = features(s, myDist, opDist, w.wallThreat !== 0, w.routeDiversity !== 0, w.wallChain !== 0);
+  const f = features(
+    s,
+    myDist,
+    opDist,
+    w.wallThreat !== 0,
+    w.routeDiversity !== 0,
+    w.wallChain !== 0,
+    w.netWallThreat !== 0,
+  );
   let score = 0;
   for (const k of FEATURE_NAMES) score += w[k] * f[k];
   return score;
