@@ -55,6 +55,10 @@ export interface Disagreement {
     guide: WallEffects;
     expert: WallEffects;
   };
+  pawnComparison?: {
+    guide: PawnEffects;
+    expert: PawnEffects;
+  };
   guideWon?: boolean;
 }
 
@@ -62,6 +66,17 @@ export interface WallEffects {
   opDistanceGain: number;
   myDistanceCost: number;
   netGain: number;
+  myThreat: number;
+  opThreat: number;
+  myRoutes: number;
+  opRoutes: number;
+}
+
+export interface PawnEffects {
+  progress: number;
+  centerOffset: number;
+  adjacent: boolean;
+  backtrack: boolean;
   myThreat: number;
   opThreat: number;
   myRoutes: number;
@@ -108,6 +123,27 @@ function wallEffects(s: GameState, move: Move, me: Player, op: Player, myDist: n
   };
 }
 
+function pawnEffects(
+  s: GameState,
+  move: Move,
+  me: Player,
+  op: Player,
+  myDist: number,
+  recent: ReturnType<typeof recentCells>,
+): PawnEffects {
+  const after = applyMove(s, move);
+  return {
+    progress: myDist - shortestDistance(after, me),
+    centerOffset: Math.abs(move.x - 4),
+    adjacent: Math.abs(move.x - after.pawns[op].x) + Math.abs(move.y - after.pawns[op].y) === 1,
+    backtrack: recent.some((p) => p.x === move.x && p.y === move.y),
+    myThreat: maxDetour(after, me),
+    opThreat: maxDetour(after, op),
+    myRoutes: rounded(shortestRouteDiversity(after, me)),
+    opRoutes: rounded(shortestRouteDiversity(after, op)),
+  };
+}
+
 export function discoverGame(job: DiscoveryJob): DiscoveryGame {
   const params = job.params ?? GUIDE_CURRENT;
   const rng = rngFrom(job.seed);
@@ -130,6 +166,7 @@ export function discoverGame(job: DiscoveryJob): DiscoveryGame {
       if (!sameMove(guide, expert.move)) {
         const me = s.turn;
         const op = (1 - me) as Player;
+        const recent = recentCells(history, me);
         const myDist = shortestDistance(s, me);
         const opDist = shortestDistance(s, op);
         const after = applyMove(s, guide);
@@ -172,6 +209,13 @@ export function discoverGame(job: DiscoveryJob): DiscoveryGame {
               ? {
                   guide: wallEffects(s, guide, me, op, myDist, opDist),
                   expert: wallEffects(s, expert.move, me, op, myDist, opDist),
+                }
+              : undefined,
+          pawnComparison:
+            guide.type === 'pawn' && expert.move.type === 'pawn'
+              ? {
+                  guide: pawnEffects(s, guide, me, op, myDist, recent),
+                  expert: pawnEffects(s, expert.move, me, op, myDist, recent),
                 }
               : undefined,
         });

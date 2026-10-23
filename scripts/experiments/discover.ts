@@ -67,6 +67,7 @@ for (const [kind, e] of [...kinds].sort((a, b) => b[1].n - a[1].n)) {
   console.log(`- ${kind}: ${e.n} 局面、平均推定損失 ${(e.regret / e.n).toFixed(1)} 点`);
 }
 
+const phase = (d: Disagreement) => (d.position.ply < 12 ? '序盤' : d.myWalls + d.opWalls <= 6 ? '終盤' : '中盤');
 const wallToWall = meaningful.filter((d) => d.wallComparison);
 if (wallToWall.length) {
   const orientation = new Map<string, number>();
@@ -105,7 +106,58 @@ if (wallToWall.length) {
   }
 }
 
-const phase = (d: Disagreement) => (d.position.ply < 12 ? '序盤' : d.myWalls + d.opWalls <= 6 ? '終盤' : '中盤');
+const pawnToPawn = meaningful.filter((d) => d.pawnComparison);
+if (pawnToPawn.length) {
+  console.log('\n## 前進 → 前進の比較');
+  console.log(`- 対象: ${pawnToPawn.length} 局面`);
+  const metrics = [
+    ['その手で縮める歩数', (d: Disagreement) => d.pawnComparison!.expert.progress - d.pawnComparison!.guide.progress],
+    [
+      '中央への近さ',
+      (d: Disagreement) => d.pawnComparison!.guide.centerOffset - d.pawnComparison!.expert.centerOffset,
+    ],
+    [
+      '自分の次の壁脅威',
+      (d: Disagreement) => d.pawnComparison!.expert.myThreat - d.pawnComparison!.guide.myThreat,
+    ],
+    [
+      '相手から受ける壁脅威（少ないほど良い）',
+      (d: Disagreement) => d.pawnComparison!.guide.opThreat - d.pawnComparison!.expert.opThreat,
+    ],
+    [
+      '自分の最短ルート多様性',
+      (d: Disagreement) => d.pawnComparison!.expert.myRoutes - d.pawnComparison!.guide.myRoutes,
+    ],
+  ] as const;
+  for (const [name, delta] of metrics) {
+    const values = pawnToPawn.map(delta);
+    const better = values.filter((v) => v > 0).length;
+    const worse = values.filter((v) => v < 0).length;
+    const average = values.reduce((a, b) => a + b, 0) / values.length;
+    console.log(`- ${name}: 探索AIが良い ${better} / 悪い ${worse} / 平均差 ${average.toFixed(2)}`);
+  }
+  const guideBacktracks = pawnToPawn.filter((d) => d.pawnComparison!.guide.backtrack).length;
+  const expertBacktracks = pawnToPawn.filter((d) => d.pawnComparison!.expert.backtrack).length;
+  const guideAdjacent = pawnToPawn.filter((d) => d.pawnComparison!.guide.adjacent).length;
+  const expertAdjacent = pawnToPawn.filter((d) => d.pawnComparison!.expert.adjacent).length;
+  console.log(`- 直近マスへ戻る: 手引き ${guideBacktracks} / 探索AI ${expertBacktracks}`);
+  console.log(`- 相手と隣接する: 手引き ${guideAdjacent} / 探索AI ${expertAdjacent}`);
+
+  console.log(`\n## 前進 → 前進の推定損失上位 ${Math.min(top, pawnToPawn.length)} 局面`);
+  for (const [i, d] of [...pawnToPawn].sort((a, b) => b.regret - a.regret).slice(0, top).entries()) {
+    const g = d.pawnComparison!.guide;
+    const e = d.pawnComparison!.expert;
+    console.log(`\n### P${i + 1}. ${phase(d)}・${d.position.ply} 手目・regret ${d.regret}`);
+    console.log(`- 手引き: ${d.guideMove}（前進 ${g.progress}、中央距離 ${g.centerOffset}、戻る ${g.backtrack ? 'はい' : 'いいえ'}）`);
+    console.log(`- 探索AI: ${d.expertMove}（前進 ${e.progress}、中央距離 ${e.centerOffset}、戻る ${e.backtrack ? 'はい' : 'いいえ'}）`);
+    console.log(`- 手引き後: 壁脅威 自分 ${g.myThreat} / 相手 ${g.opThreat}、最短ルート多様性 自分 ${g.myRoutes} / 相手 ${g.opRoutes}`);
+    console.log(`- 探索AI後: 壁脅威 自分 ${e.myThreat} / 相手 ${e.opThreat}、最短ルート多様性 自分 ${e.myRoutes} / 相手 ${e.opRoutes}`);
+    console.log(`- 残り歩数: 自分 ${d.myDist} / 相手 ${d.opDist}、壁: 自分 ${d.myWalls} / 相手 ${d.opWalls}`);
+    console.log(`- 盤面: 駒 ${d.position.pawns.join(' / ')}、横壁 [${d.position.hWalls.join(' ')}]、縦壁 [${d.position.vWalls.join(' ')}]`);
+    console.log(`- 直前までの棋譜: ${d.position.moves || '（初期局面）'}`);
+  }
+}
+
 const phases = new Map<string, number>();
 for (const d of meaningful) phases.set(phase(d), (phases.get(phase(d)) ?? 0) + 1);
 console.log('\n## 発生する局面');
