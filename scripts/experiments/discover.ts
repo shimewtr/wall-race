@@ -246,6 +246,21 @@ if (wallToPawn.length) {
     const immediateLead = d.opDist + c.guide.opDistanceGain - (d.myDist + c.guide.myDistanceCost);
     return c.guideAfterReply.raceLead < immediateLead;
   }).length;
+  const replyPatterns = new Map<string, { n: number; regret: number }>();
+  for (const d of wallToPawn) {
+    const c = d.wallPawnComparison!;
+    const key = `壁後 ${c.guideAfterReply.replyType ?? '決着'} / 前進後 ${c.expertAfterReply.replyType ?? '決着'}`;
+    const value = replyPatterns.get(key) ?? { n: 0, regret: 0 };
+    value.n++;
+    value.regret += d.regret;
+    replyPatterns.set(key, value);
+  }
+  const initiativeSwing = wallToPawn.filter((d) => {
+    const c = d.wallPawnComparison!;
+    return c.guideAfterReply.replyType === 'pawn' && c.expertAfterReply.replyType === 'wall';
+  });
+  const initiativeNearGoal = initiativeSwing.filter((d) => d.myDist <= 4).length;
+  const initiativeRegret = initiativeSwing.reduce((sum, d) => sum + d.regret, 0) / initiativeSwing.length;
   console.log(`- 即時効果と探索AIの前進量: 壁が大きい ${wallBetter} / 同じ ${same} / 前進が大きい ${pawnBetter}`);
   console.log(`- 最後の壁を使う: ${lastWall} 局面`);
   console.log(`- 壁を置いても歩数リードが増えない: ${noRaceImprovement} 局面`);
@@ -259,6 +274,15 @@ if (wallToPawn.length) {
   console.log(`- 相手の壁が尽き、先着できる形: 壁側 ${secureRace('guideAfterReply')} / 前進側 ${secureRace('expertAfterReply')}`);
   console.log(`- 相手の最善応手までに敗着: 壁側 ${opponentWins('guideAfterReply')} / 前進側 ${opponentWins('expertAfterReply')}`);
   console.log(`- 壁の即時リードが相手の最善応手で縮む: ${wallGainErased} 局面`);
+  console.log('- 応手の組み合わせ:');
+  for (const [pattern, value] of [...replyPatterns].sort((a, b) => b[1].n - a[1].n)) {
+    console.log(`  - ${pattern}: ${value.n} 局面、平均推定損失 ${(value.regret / value.n).toFixed(1)} 点`);
+  }
+  if (initiativeSwing.length) {
+    console.log(
+      `- 主導権の逆転（自分が壁なら相手は前進、自分が前進なら相手は壁）: ${initiativeSwing.length} 局面（自分が残り4歩以内 ${initiativeNearGoal}）、平均推定損失 ${initiativeRegret.toFixed(1)} 点`,
+    );
+  }
 
   console.log(`\n## 壁 → 前進の推定損失上位 ${Math.min(top, wallToPawn.length)} 局面`);
   for (const [i, d] of [...wallToPawn].sort((a, b) => b.regret - a.regret).slice(0, top).entries()) {
