@@ -66,6 +66,12 @@ export interface Disagreement {
     guideAfterReply: ContinuationEffects;
     expertAfterReply: ContinuationEffects;
   };
+  pawnWallComparison?: {
+    guide: PawnEffects;
+    expert: WallEffects;
+    guideAfterReply: ContinuationEffects;
+    expertAfterReply: ContinuationEffects;
+  };
   guideWon?: boolean;
 }
 
@@ -274,6 +280,25 @@ export function discoverGame(job: DiscoveryJob): DiscoveryGame {
                 };
               })()
             : undefined;
+        const pawnWallComparison =
+          guide.type === 'pawn' && expert.move.type === 'wall'
+            ? (() => {
+                const afterExpert = applyMove(s, expert.move);
+                const expertReply = isOver(afterExpert)
+                  ? undefined
+                  : search(afterExpert, {
+                      maxDepth: Math.max(1, currentDepth - 1),
+                      weights: job.weights,
+                      recent: recentCells([...history, afterExpert], afterExpert.turn),
+                    });
+                return {
+                  guide: pawnEffects(s, guide, me, op, myDist, recent),
+                  expert: wallEffects(s, expert.move, me, op, myDist, opDist),
+                  guideAfterReply: continuationEffects(after, guideReply?.move, me, op),
+                  expertAfterReply: continuationEffects(afterExpert, expertReply?.move, me, op),
+                };
+              })()
+            : undefined;
         disagreements.push({
           position: {
             ply: s.ply,
@@ -314,6 +339,7 @@ export function discoverGame(job: DiscoveryJob): DiscoveryGame {
                 }
               : undefined,
           wallPawnComparison,
+          pawnWallComparison,
         });
       }
     } else {

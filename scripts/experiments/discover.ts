@@ -386,6 +386,79 @@ if (wallToPawn.length) {
   }
 }
 
+const pawnToWall = meaningful.filter((d) => d.pawnWallComparison);
+if (pawnToWall.length) {
+  console.log('\n## 前進 → 壁の比較');
+  console.log(`- 対象: ${pawnToWall.length} 局面`);
+  const wallNetBins = [
+    ['0歩以下', (n: number) => n <= 0],
+    ['1歩', (n: number) => n === 1],
+    ['2〜3歩', (n: number) => n >= 2 && n <= 3],
+    ['4歩以上', (n: number) => n >= 4],
+  ] as const;
+  const wallCutBins = [
+    ['相手の1歩先', (n: number | null) => n === 1],
+    ['相手の2〜3歩先', (n: number | null) => n !== null && n >= 2 && n <= 3],
+    ['相手の4〜6歩先', (n: number | null) => n !== null && n >= 4 && n <= 6],
+    ['相手の7歩以上先', (n: number | null) => n !== null && n >= 7],
+    ['現在の代表最短路以外', (n: number | null) => n === null],
+  ] as const;
+  const stateBins = [
+    ['歩数で負け・同点', (d: Disagreement) => d.opDist - d.myDist <= 0],
+    ['1〜3歩リード', (d: Disagreement) => d.opDist - d.myDist >= 1 && d.opDist - d.myDist <= 3],
+    ['4歩以上リード', (d: Disagreement) => d.opDist - d.myDist >= 4],
+    ['相手が残り4歩以内', (d: Disagreement) => d.opDist <= 4],
+    ['自分の壁が残り1枚', (d: Disagreement) => d.myWalls === 1],
+  ] as const;
+  for (const [name, includes] of wallNetBins) {
+    const at = pawnToWall.filter((d) => includes(d.pawnWallComparison!.expert.netGain));
+    if (!at.length) continue;
+    console.log(`- 探索AIの壁の即時正味効果 ${name}: ${at.length} 局面`);
+  }
+  for (const [name, includes] of wallCutBins) {
+    const at = pawnToWall.filter((d) => includes(d.pawnWallComparison!.expert.routeCutStep));
+    if (!at.length) continue;
+    console.log(`- 探索AIの壁の位置 ${name}: ${at.length} 局面`);
+  }
+  for (const [name, includes] of stateBins) console.log(`- ${name}: ${pawnToWall.filter(includes).length} 局面`);
+  const winningPawnToWall = winningMeaningful.filter((d) => d.pawnWallComparison);
+  if (winningPawnToWall.length) {
+    console.log('- 勝敗対照:');
+    const contrast = (name: string, includes: (d: Disagreement) => boolean) => {
+      const losing = pawnToWall.filter(includes).length;
+      const winning = winningPawnToWall.filter(includes).length;
+      const losingRate = (losing / pawnToWall.length) * 100;
+      const winningRate = (winning / winningPawnToWall.length) * 100;
+      console.log(
+        `  - ${name}: 敗戦 ${losing}（${losingRate.toFixed(1)}%）/ 勝利 ${winning}（${winningRate.toFixed(1)}%）/ 差 ${(losingRate - winningRate).toFixed(1)}pt`,
+      );
+    };
+    console.log(`  - 敗戦中: ${pawnToWall.length} 局面 / 勝利中: ${winningPawnToWall.length} 局面`);
+    for (const [name, includes] of wallNetBins) {
+      contrast(`探索AIの壁の即時正味効果 ${name}`, (d) => includes(d.pawnWallComparison!.expert.netGain));
+    }
+    for (const [name, includes] of wallCutBins) {
+      contrast(`探索AIの壁の位置 ${name}`, (d) => includes(d.pawnWallComparison!.expert.routeCutStep));
+    }
+    for (const [name, includes] of stateBins) contrast(name, includes);
+    contrast('前進後に相手が壁で返す', (d) => d.pawnWallComparison!.guideAfterReply.replyType === 'wall');
+    contrast('壁後に相手が前進で返す', (d) => d.pawnWallComparison!.expertAfterReply.replyType === 'pawn');
+  }
+
+  console.log(`\n## 前進 → 壁の推定損失上位 ${Math.min(top, pawnToWall.length)} 局面`);
+  for (const [i, d] of [...pawnToWall].sort((a, b) => b.regret - a.regret).slice(0, top).entries()) {
+    const p = d.pawnWallComparison!.guide;
+    const w = d.pawnWallComparison!.expert;
+    console.log(`\n### B${i + 1}. ${phase(d)}・${d.position.ply} 手目・regret ${d.regret}`);
+    console.log(`- 手引き: ${d.guideMove}（前進 ${p.progress}、戻る ${p.backtrack ? 'はい' : 'いいえ'}）`);
+    console.log(`- 探索AI: ${d.expertMove}（相手 +${w.opDistanceGain} / 自分 +${w.myDistanceCost} / 正味 ${w.netGain}歩）`);
+    console.log(`- 壁の位置: 相手の代表最短路の ${w.routeCutStep ?? '外'} 歩先、相手駒から壁周辺まで ${w.pawnDistanceToWall} マス`);
+    console.log(`- 残り歩数: 自分 ${d.myDist} / 相手 ${d.opDist}、壁: 自分 ${d.myWalls} / 相手 ${d.opWalls}`);
+    console.log(`- 盤面: 駒 ${d.position.pawns.join(' / ')}、横壁 [${d.position.hWalls.join(' ')}]、縦壁 [${d.position.vWalls.join(' ')}]`);
+    console.log(`- 直前までの棋譜: ${d.position.moves || '（初期局面）'}`);
+  }
+}
+
 const phases = new Map<string, number>();
 for (const d of meaningful) phases.set(phase(d), (phases.get(phase(d)) ?? 0) + 1);
 console.log('\n## 発生する局面');
