@@ -317,20 +317,30 @@ if (wallToPawn.length) {
   if (winningWallToPawn.length) {
     console.log('\n## 壁 → 前進の勝敗対照');
     console.log(`- 敗戦中: ${wallToPawn.length} 局面 / 勝利中: ${winningWallToPawn.length} 局面`);
-    for (const [name, includes] of cutStepBins) {
-      const losing = wallToPawn.filter((d) => includes(d.wallPawnComparison!.guide.routeCutStep));
-      const winning = winningWallToPawn.filter((d) => includes(d.wallPawnComparison!.guide.routeCutStep));
-      const losingRate = (losing.length / wallToPawn.length) * 100;
-      const winningRate = (winning.length / winningWallToPawn.length) * 100;
+    const contrast = (name: string, includes: (d: Disagreement) => boolean) => {
+      const losing = wallToPawn.filter(includes).length;
+      const winning = winningWallToPawn.filter(includes).length;
+      const losingRate = (losing / wallToPawn.length) * 100;
+      const winningRate = (winning / winningWallToPawn.length) * 100;
       console.log(
-        `- 壁の位置 ${name}: 敗戦 ${losing.length}（${losingRate.toFixed(1)}%）/ 勝利 ${winning.length}（${winningRate.toFixed(1)}%）/ 差 ${(losingRate - winningRate).toFixed(1)}pt`,
+        `- ${name}: 敗戦 ${losing}（${losingRate.toFixed(1)}%）/ 勝利 ${winning}（${winningRate.toFixed(1)}%）/ 差 ${(losingRate - winningRate).toFixed(1)}pt`,
       );
+    };
+    for (const [name, includes] of cutStepBins) {
+      contrast(`壁の位置 ${name}`, (d) => includes(d.wallPawnComparison!.guide.routeCutStep));
     }
-    const lossNearGoal = wallToPawn.filter((d) => d.myDist <= 4).length;
-    const winNearGoal = winningWallToPawn.filter((d) => d.myDist <= 4).length;
-    console.log(
-      `- 自分が残り4歩以内: 敗戦 ${lossNearGoal}（${pct(lossNearGoal, wallToPawn.length)}）/ 勝利 ${winNearGoal}（${pct(winNearGoal, winningWallToPawn.length)}）`,
-    );
+    for (const [name, includes] of netBins) {
+      contrast(`壁の即時正味効果 ${name}`, (d) => includes(d.wallPawnComparison!.guide.netGain));
+    }
+    for (const [name, includes] of leadBins) contrast(name, includes);
+    contrast('自分が残り4歩以内', (d) => d.myDist <= 4);
+    contrast('最後の壁を使う', (d) => d.myWalls === 1);
+    contrast('壁手へ相手が前進で返す', (d) => d.wallPawnComparison!.guideAfterReply.replyType === 'pawn');
+    contrast('前進手へ相手が壁で返す', (d) => d.wallPawnComparison!.expertAfterReply.replyType === 'wall');
+    contrast('壁なら相手が前進・前進なら相手が壁', (d) => {
+      const c = d.wallPawnComparison!;
+      return c.guideAfterReply.replyType === 'pawn' && c.expertAfterReply.replyType === 'wall';
+    });
   }
 
   console.log(`\n## 壁 → 前進の推定損失上位 ${Math.min(top, wallToPawn.length)} 局面`);
