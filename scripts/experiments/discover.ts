@@ -39,13 +39,24 @@ const all = records.flatMap((g) => g.disagreements);
 const losses = all.filter((d) => !d.guideWon);
 const meaningfulRaw = losses.filter((d) => d.regret >= 1);
 // 序盤の乱数だけが違って同じ盤面へ合流することがある。LLM に同じ例を何度も見せない。
-const unique = new Map<string, Disagreement>();
-for (const d of meaningfulRaw) {
-  const key = JSON.stringify([d.position.pawns, d.position.wallsLeft, d.position.hWalls, d.position.vWalls, d.position.guidePlayer]);
-  const previous = unique.get(key);
-  if (!previous || d.regret > previous.regret) unique.set(key, d);
-}
-const meaningful = [...unique.values()];
+const uniquePositions = (items: Disagreement[]) => {
+  const unique = new Map<string, Disagreement>();
+  for (const d of items) {
+    const key = JSON.stringify([
+      d.position.pawns,
+      d.position.wallsLeft,
+      d.position.hWalls,
+      d.position.vWalls,
+      d.position.guidePlayer,
+    ]);
+    const previous = unique.get(key);
+    if (!previous || d.regret > previous.regret) unique.set(key, d);
+  }
+  return [...unique.values()];
+};
+const meaningful = uniquePositions(meaningfulRaw);
+const winningRaw = all.filter((d) => d.guideWon && d.regret >= 1);
+const winningMeaningful = uniquePositions(winningRaw);
 
 console.log(`# 戦術発見用ログ: 手引き AI 対 第 ${champion.generation} 世代`);
 console.log();
@@ -53,6 +64,7 @@ console.log(`対局: ${games} 局（${depth} 手読み） / 手引き AI 勝率 
 console.log(
   `判断の不一致: ${all.length} 局面 / 手引き敗戦中 ${losses.length} 局面 / 推定損失 1 点以上 ${meaningfulRaw.length} 局面（重複除去後 ${meaningful.length}）`,
 );
+console.log(`対照群: 手引き勝利中の推定損失 1 点以上 ${winningRaw.length} 局面（重複除去後 ${winningMeaningful.length}）`);
 
 const kinds = new Map<string, { n: number; regret: number }>();
 for (const d of meaningful) {
@@ -298,6 +310,26 @@ if (wallToPawn.length) {
   if (initiativeSwing.length) {
     console.log(
       `- 主導権の逆転（自分が壁なら相手は前進、自分が前進なら相手は壁）: ${initiativeSwing.length} 局面（自分が残り4歩以内 ${initiativeNearGoal}）、平均推定損失 ${initiativeRegret.toFixed(1)} 点`,
+    );
+  }
+
+  const winningWallToPawn = winningMeaningful.filter((d) => d.wallPawnComparison);
+  if (winningWallToPawn.length) {
+    console.log('\n## 壁 → 前進の勝敗対照');
+    console.log(`- 敗戦中: ${wallToPawn.length} 局面 / 勝利中: ${winningWallToPawn.length} 局面`);
+    for (const [name, includes] of cutStepBins) {
+      const losing = wallToPawn.filter((d) => includes(d.wallPawnComparison!.guide.routeCutStep));
+      const winning = winningWallToPawn.filter((d) => includes(d.wallPawnComparison!.guide.routeCutStep));
+      const losingRate = (losing.length / wallToPawn.length) * 100;
+      const winningRate = (winning.length / winningWallToPawn.length) * 100;
+      console.log(
+        `- 壁の位置 ${name}: 敗戦 ${losing.length}（${losingRate.toFixed(1)}%）/ 勝利 ${winning.length}（${winningRate.toFixed(1)}%）/ 差 ${(losingRate - winningRate).toFixed(1)}pt`,
+      );
+    }
+    const lossNearGoal = wallToPawn.filter((d) => d.myDist <= 4).length;
+    const winNearGoal = winningWallToPawn.filter((d) => d.myDist <= 4).length;
+    console.log(
+      `- 自分が残り4歩以内: 敗戦 ${lossNearGoal}（${pct(lossNearGoal, wallToPawn.length)}）/ 勝利 ${winNearGoal}（${pct(winNearGoal, winningWallToPawn.length)}）`,
     );
   }
 
