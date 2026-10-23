@@ -443,6 +443,19 @@ if (pawnToWall.length) {
     for (const [name, includes] of stateBins) contrast(name, includes);
     contrast('前進後に相手が壁で返す', (d) => d.pawnWallComparison!.guideAfterReply.replyType === 'wall');
     contrast('壁後に相手が前進で返す', (d) => d.pawnWallComparison!.expertAfterReply.replyType === 'pawn');
+    const behindOrTied = (d: Disagreement) => d.opDist - d.myDist <= 0;
+    const opponentNearGoal = (d: Disagreement) => d.opDist <= 4;
+    const lastWall = (d: Disagreement) => d.myWalls === 1;
+    const immediateBlock = (d: Disagreement) => d.pawnWallComparison!.expert.routeCutStep === 1;
+    console.log('  - 複合条件:');
+    contrast('  歩数で負け・同点 × 相手が残り4歩以内', (d) => behindOrTied(d) && opponentNearGoal(d));
+    contrast('  歩数で負け・同点 × 自分の壁が残り1枚', (d) => behindOrTied(d) && lastWall(d));
+    contrast('  相手が残り4歩以内 × 自分の壁が残り1枚', (d) => opponentNearGoal(d) && lastWall(d));
+    contrast(
+      '  歩数で負け・同点 × 相手が残り4歩以内 × 自分の壁が残り1枚',
+      (d) => behindOrTied(d) && opponentNearGoal(d) && lastWall(d),
+    );
+    contrast('  相手が残り4歩以内 × 相手の1歩先を塞ぐ壁', (d) => opponentNearGoal(d) && immediateBlock(d));
   }
 
   console.log(`\n## 前進 → 壁の推定損失上位 ${Math.min(top, pawnToWall.length)} 局面`);
