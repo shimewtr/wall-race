@@ -219,11 +219,46 @@ if (wallToPawn.length) {
   );
   const pawnPreservesMoreThreat = threatDeltas.filter((n) => n > 0).length;
   const averageThreatDelta = threatDeltas.reduce((a, b) => a + b, 0) / threatDeltas.length;
+  const replyTypes = (branch: 'guideAfterReply' | 'expertAfterReply') => {
+    const counts = new Map<string, number>();
+    for (const d of wallToPawn) {
+      const reply = d.wallPawnComparison![branch].replyType ?? 'なし（決着）';
+      counts.set(reply, (counts.get(reply) ?? 0) + 1);
+    }
+    return [...counts].map(([type, n]) => `${type} ${n}`).join(' / ');
+  };
+  const replyRaceDeltas = wallToPawn.map(
+    (d) => d.wallPawnComparison!.expertAfterReply.raceLead - d.wallPawnComparison!.guideAfterReply.raceLead,
+  );
+  const pawnLineBetterAfterReply = replyRaceDeltas.filter((n) => n > 0).length;
+  const sameAfterReply = replyRaceDeltas.filter((n) => n === 0).length;
+  const wallLineBetterAfterReply = replyRaceDeltas.filter((n) => n < 0).length;
+  const averageRaceDelta = replyRaceDeltas.reduce((a, b) => a + b, 0) / replyRaceDeltas.length;
+  const secureRace = (branch: 'guideAfterReply' | 'expertAfterReply') =>
+    wallToPawn.filter((d) => {
+      const c = d.wallPawnComparison![branch];
+      return c.opWalls === 0 && c.myDist <= c.opDist;
+    }).length;
+  const opponentWins = (branch: 'guideAfterReply' | 'expertAfterReply') =>
+    wallToPawn.filter((d) => d.wallPawnComparison![branch].winner === (1 - d.position.guidePlayer)).length;
+  const wallGainErased = wallToPawn.filter((d) => {
+    const c = d.wallPawnComparison!;
+    const immediateLead = d.opDist + c.guide.opDistanceGain - (d.myDist + c.guide.myDistanceCost);
+    return c.guideAfterReply.raceLead < immediateLead;
+  }).length;
   console.log(`- 即時効果と探索AIの前進量: 壁が大きい ${wallBetter} / 同じ ${same} / 前進が大きい ${pawnBetter}`);
   console.log(`- 最後の壁を使う: ${lastWall} 局面`);
   console.log(`- 壁を置いても歩数リードが増えない: ${noRaceImprovement} 局面`);
   console.log(`- 壁で歩数上の不利・同点をリードへ変える: ${wallCreatesLead} 局面`);
   console.log(`- 前進後のほうが次の壁脅威を多く残す: ${pawnPreservesMoreThreat} 局面、平均差 ${averageThreatDelta.toFixed(2)} 歩`);
+  console.log(`- 壁手への最善応手: ${replyTypes('guideAfterReply')}`);
+  console.log(`- 前進手への最善応手: ${replyTypes('expertAfterReply')}`);
+  console.log(
+    `- 最善応手後の歩数リード: 前進側が良い ${pawnLineBetterAfterReply} / 同じ ${sameAfterReply} / 壁側が良い ${wallLineBetterAfterReply} / 前進側の平均差 ${averageRaceDelta.toFixed(2)} 歩`,
+  );
+  console.log(`- 相手の壁が尽き、先着できる形: 壁側 ${secureRace('guideAfterReply')} / 前進側 ${secureRace('expertAfterReply')}`);
+  console.log(`- 相手の最善応手までに敗着: 壁側 ${opponentWins('guideAfterReply')} / 前進側 ${opponentWins('expertAfterReply')}`);
+  console.log(`- 壁の即時リードが相手の最善応手で縮む: ${wallGainErased} 局面`);
 
   console.log(`\n## 壁 → 前進の推定損失上位 ${Math.min(top, wallToPawn.length)} 局面`);
   for (const [i, d] of [...wallToPawn].sort((a, b) => b.regret - a.regret).slice(0, top).entries()) {
@@ -234,6 +269,10 @@ if (wallToPawn.length) {
     console.log(`- 探索AI: ${d.expertMove}（前進 ${p.progress}、戻る ${p.backtrack ? 'はい' : 'いいえ'}）`);
     console.log(`- 壁後: 壁脅威 自分 ${w.myThreat} / 相手 ${w.opThreat}、最短ルート多様性 自分 ${w.myRoutes} / 相手 ${w.opRoutes}`);
     console.log(`- 前進後: 壁脅威 自分 ${p.myThreat} / 相手 ${p.opThreat}、最短ルート多様性 自分 ${p.myRoutes} / 相手 ${p.opRoutes}`);
+    const gw = d.wallPawnComparison!.guideAfterReply;
+    const ep = d.wallPawnComparison!.expertAfterReply;
+    console.log(`- 壁手への最善応手: ${gw.reply ?? '（決着）'}、応手後の残り歩数 自分 ${gw.myDist} / 相手 ${gw.opDist}、リード ${gw.raceLead}`);
+    console.log(`- 前進手への最善応手: ${ep.reply ?? '（決着）'}、応手後の残り歩数 自分 ${ep.myDist} / 相手 ${ep.opDist}、リード ${ep.raceLead}`);
     console.log(`- 残り歩数: 自分 ${d.myDist} / 相手 ${d.opDist}、壁: 自分 ${d.myWalls} / 相手 ${d.opWalls}`);
     console.log(`- 盤面: 駒 ${d.position.pawns.join(' / ')}、横壁 [${d.position.hWalls.join(' ')}]、縦壁 [${d.position.vWalls.join(' ')}]`);
     console.log(`- 直前までの棋譜: ${d.position.moves || '（初期局面）'}`);

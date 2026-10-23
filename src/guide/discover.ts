@@ -62,6 +62,8 @@ export interface Disagreement {
   wallPawnComparison?: {
     guide: WallEffects;
     expert: PawnEffects;
+    guideAfterReply: ContinuationEffects;
+    expertAfterReply: ContinuationEffects;
   };
   guideWon?: boolean;
 }
@@ -85,6 +87,19 @@ export interface PawnEffects {
   opThreat: number;
   myRoutes: number;
   opRoutes: number;
+}
+
+export interface ContinuationEffects {
+  reply: string | null;
+  replyType: Move['type'] | null;
+  winner: Player | null;
+  myDist: number;
+  opDist: number;
+  raceLead: number;
+  myWalls: number;
+  opWalls: number;
+  myThreat: number;
+  opThreat: number;
 }
 
 export interface DiscoveryGame {
@@ -148,6 +163,29 @@ function pawnEffects(
   };
 }
 
+function continuationEffects(
+  afterCandidate: GameState,
+  reply: Move | undefined,
+  me: Player,
+  op: Player,
+): ContinuationEffects {
+  const afterReply = reply ? applyMove(afterCandidate, reply) : afterCandidate;
+  const myDist = shortestDistance(afterReply, me);
+  const opDist = shortestDistance(afterReply, op);
+  return {
+    reply: reply ? moveToString(reply) : null,
+    replyType: reply?.type ?? null,
+    winner: afterReply.winner,
+    myDist,
+    opDist,
+    raceLead: opDist - myDist,
+    myWalls: afterReply.wallsLeft[me],
+    opWalls: afterReply.wallsLeft[op],
+    myThreat: maxDetour(afterReply, me),
+    opThreat: maxDetour(afterReply, op),
+  };
+}
+
 export function discoverGame(job: DiscoveryJob): DiscoveryGame {
   const params = job.params ?? GUIDE_CURRENT;
   const rng = rngFrom(job.seed);
@@ -176,13 +214,33 @@ export function discoverGame(job: DiscoveryJob): DiscoveryGame {
         const after = applyMove(s, guide);
         // 根の探索と同じ読みの深さになるよう、手引きの手の後を 1 段浅く読む。
         // 手引きの手で即勝ちした場合は損失 0 として、発見候補から自然に外す。
-        const guideScore = isOver(after)
-          ? expert.score
-          : -search(after, {
+        const guideReply = isOver(after)
+          ? undefined
+          : search(after, {
               maxDepth: Math.max(1, currentDepth - 1),
               weights: job.weights,
               recent: recentCells([...history, after], after.turn),
-            }).score;
+            });
+        const guideScore = guideReply ? -guideReply.score : expert.score;
+        const wallPawnComparison =
+          guide.type === 'wall' && expert.move.type === 'pawn'
+            ? (() => {
+                const afterExpert = applyMove(s, expert.move);
+                const expertReply = isOver(afterExpert)
+                  ? undefined
+                  : search(afterExpert, {
+                      maxDepth: Math.max(1, currentDepth - 1),
+                      weights: job.weights,
+                      recent: recentCells([...history, afterExpert], afterExpert.turn),
+                    });
+                return {
+                  guide: wallEffects(s, guide, me, op, myDist, opDist),
+                  expert: pawnEffects(s, expert.move, me, op, myDist, recent),
+                  guideAfterReply: continuationEffects(after, guideReply?.move, me, op),
+                  expertAfterReply: continuationEffects(afterExpert, expertReply?.move, me, op),
+                };
+              })()
+            : undefined;
         disagreements.push({
           position: {
             ply: s.ply,
@@ -222,13 +280,7 @@ export function discoverGame(job: DiscoveryJob): DiscoveryGame {
                   expert: pawnEffects(s, expert.move, me, op, myDist, recent),
                 }
               : undefined,
-          wallPawnComparison:
-            guide.type === 'wall' && expert.move.type === 'pawn'
-              ? {
-                  guide: wallEffects(s, guide, me, op, myDist, opDist),
-                  expert: pawnEffects(s, expert.move, me, op, myDist, recent),
-                }
-              : undefined,
+          wallPawnComparison,
         });
       }
     } else {
