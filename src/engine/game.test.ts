@@ -31,7 +31,7 @@ import {
 import { fitCalibration, winRate } from '../train/calibrate';
 import type { MoveRecord } from '../train/record';
 import { rngFrom } from '../train/match';
-import { GUIDE_ADVANCED, GUIDE_CURRENT, GUIDE_V5, guideMove } from '../guide/policy';
+import { GUIDE_ADVANCED, GUIDE_CURRENT, GUIDE_V5, GUIDE_V7, guideMove } from '../guide/policy';
 
 const sortPos = (ps: { x: number; y: number }[]) =>
   ps.map((p) => `${p.x},${p.y}`).sort();
@@ -285,7 +285,7 @@ describe('手引き AI', () => {
     for (const text of moves.split(' ')) history.push(applyMove(history.at(-1)!, moveFromString(text)!));
     const s = history.at(-1)!;
     expect(s.wallsLeft[s.turn]).toBe(0);
-    expect(moveToString(guideMove(s, GUIDE_CURRENT, recentCells(history, s.turn)))).toBe('d7');
+    expect(moveToString(guideMove(s, GUIDE_V7, recentCells(history, s.turn)))).toBe('d7');
     expect(
       moveToString(
         guideMove(s, { ...GUIDE_CURRENT, noWallBacktrackCost: 2 }, recentCells(history, s.turn)),

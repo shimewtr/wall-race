@@ -73,7 +73,10 @@ export const GUIDE_V6: GuideParams = { ...GUIDE_V5, lastWallCost: 2 };
 // 第 7 版: 第 8 世代との敗戦ログで、壁が尽きた後に同じ2マスを往復する例が繰り返し見つかった。
 // 直近にいたマスへ戻る手に0.5歩分のコストを付け、全世代リーグ平均 68.4% → 71.4%。
 export const GUIDE_V7: GuideParams = { ...GUIDE_V6, backtrackCost: 0.5 };
-export const GUIDE_CURRENT: GuideParams = GUIDE_V7;
+// 第 8 版: 第12世代との前進手の判断差191局面を分析すると、手引きは直近マスへ103回戻り、探索AIは23回だった。
+// 壁切れ後だけ戻る手を2歩減点すると、全世代リーグ各100局で平均68.7%→69.9%。第12世代への勝率も維持した。
+export const GUIDE_V8: GuideParams = { ...GUIDE_V7, noWallBacktrackCost: 2 };
+export const GUIDE_CURRENT: GuideParams = GUIDE_V8;
 
 // 手番側から見た歩数の差（0 以上なら手番側が先着）
 const lead = (s: GameState) => shortestDistance(s, (1 - s.turn) as Player) - shortestDistance(s, s.turn);
