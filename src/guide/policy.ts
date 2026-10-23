@@ -39,6 +39,8 @@ export interface GuideParams {
   lastWallCost?: number;
   // 直近にいたマスへ戻る手に課す歩数換算のコスト（往復を避ける）
   backtrackCost?: number;
+  // 自分の壁が尽きた後だけ、戻る手に課す歩数換算のコストを上書きする
+  noWallBacktrackCost?: number;
   // 相手の壁 1 枚でこの歩数以上遠回りさせられるときだけ、脅威を減らす守りの壁を候補にする
   guardThreatAtLeast?: number;
 }
@@ -109,7 +111,7 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number, recent:
           score -= params.wallCost ?? 0;
           if (s.wallsLeft[me] === 1) score -= params.lastWallCost ?? 0;
         } else if (recent.some((p) => p.x === m.x && p.y === m.y)) {
-          score -= params.backtrackCost ?? 0;
+          score -= s.wallsLeft[me] === 0 ? (params.noWallBacktrackCost ?? params.backtrackCost ?? 0) : (params.backtrackCost ?? 0);
         }
       }
     }
@@ -167,7 +169,11 @@ function simpleMove(s: GameState, params: GuideParams, recent: Pos[]): Move {
 
   const options = pawnMoves(s).map((p) => {
     const m: Move = { type: 'pawn', x: p.x, y: p.y };
-    const backtrack = recent.some((r) => r.x === p.x && r.y === p.y) ? (params.backtrackCost ?? 0) : 0;
+    const backtrack = recent.some((r) => r.x === p.x && r.y === p.y)
+      ? s.wallsLeft[me] === 0
+        ? (params.noWallBacktrackCost ?? params.backtrackCost ?? 0)
+        : (params.backtrackCost ?? 0)
+      : 0;
     return { m, d: shortestDistance(applyMove(s, m), me) + backtrack, c: Math.abs(p.x - 4) };
   });
   options.sort((a, b) => a.d - b.d || a.c - b.c);

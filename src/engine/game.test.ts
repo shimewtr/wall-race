@@ -278,6 +278,20 @@ describe('手引き AI', () => {
     expect(moveToString(guideMove(s, GUIDE_CURRENT))).toBe('e3');
     expect(moveToString(guideMove(s, { ...GUIDE_CURRENT, backtrackCost: 1 }, recentCells(history, s.turn)))).not.toBe('e3');
   });
+
+  it('壁が尽きた後だけ戻る手のコストを上書きできる', () => {
+    const moves = 'e2 d9 e3 d8 e4 d7 e5 d6 e6 d5 e7 d4 e8 e8h d2h d7v e7 c4 c3h c5 b4v d5 d4v d6 f7 g8h g7 e6 e4h f6 g4h g6 g5v g5 f5h f5 a5h e5 g6 e6 f6 d6 e6 c6h g7v c6 d6 c5v d5 b6 d4 b7 c4 b8 c5 b9 c6 c9 b6 d9 b7 b7h c7 e9 d7 c8h c7 f9 d7 g9 c7 h9 d7 i9 c7 i8 d7 i7 c7 i6 d7 i5 c7 i4';
+    const history = [initialState()];
+    for (const text of moves.split(' ')) history.push(applyMove(history.at(-1)!, moveFromString(text)!));
+    const s = history.at(-1)!;
+    expect(s.wallsLeft[s.turn]).toBe(0);
+    expect(moveToString(guideMove(s, GUIDE_CURRENT, recentCells(history, s.turn)))).toBe('d7');
+    expect(
+      moveToString(
+        guideMove(s, { ...GUIDE_CURRENT, noWallBacktrackCost: 2 }, recentCells(history, s.turn)),
+      ),
+    ).toBe('b7');
+  });
 });
 
 describe('高速化した処理が元の処理と一致する', () => {
