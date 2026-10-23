@@ -59,6 +59,10 @@ export interface Disagreement {
     guide: PawnEffects;
     expert: PawnEffects;
   };
+  wallPawnComparison?: {
+    guide: WallEffects;
+    expert: PawnEffects;
+  };
   guideWon?: boolean;
 }
 
@@ -215,6 +219,13 @@ export function discoverGame(job: DiscoveryJob): DiscoveryGame {
             guide.type === 'pawn' && expert.move.type === 'pawn'
               ? {
                   guide: pawnEffects(s, guide, me, op, myDist, recent),
+                  expert: pawnEffects(s, expert.move, me, op, myDist, recent),
+                }
+              : undefined,
+          wallPawnComparison:
+            guide.type === 'wall' && expert.move.type === 'pawn'
+              ? {
+                  guide: wallEffects(s, guide, me, op, myDist, opDist),
                   expert: pawnEffects(s, expert.move, me, op, myDist, recent),
                 }
               : undefined,

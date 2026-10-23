@@ -158,6 +158,60 @@ if (pawnToPawn.length) {
   }
 }
 
+const wallToPawn = meaningful.filter((d) => d.wallPawnComparison);
+if (wallToPawn.length) {
+  console.log('\n## 壁 → 前進の比較');
+  console.log(`- 対象: ${wallToPawn.length} 局面`);
+  const netBins = [
+    ['0歩以下', (n: number) => n <= 0],
+    ['1歩', (n: number) => n === 1],
+    ['2〜3歩', (n: number) => n >= 2 && n <= 3],
+    ['4歩以上', (n: number) => n >= 4],
+  ] as const;
+  for (const [name, includes] of netBins) {
+    const at = wallToPawn.filter((d) => includes(d.wallPawnComparison!.guide.netGain));
+    if (!at.length) continue;
+    const regret = at.reduce((sum, d) => sum + d.regret, 0) / at.length;
+    console.log(`- 壁の即時正味効果 ${name}: ${at.length} 局面、平均推定損失 ${regret.toFixed(1)} 点`);
+  }
+  const wallBetter = wallToPawn.filter(
+    (d) => d.wallPawnComparison!.guide.netGain > d.wallPawnComparison!.expert.progress,
+  ).length;
+  const same = wallToPawn.filter(
+    (d) => d.wallPawnComparison!.guide.netGain === d.wallPawnComparison!.expert.progress,
+  ).length;
+  const pawnBetter = wallToPawn.length - wallBetter - same;
+  const lastWall = wallToPawn.filter((d) => d.myWalls === 1).length;
+  const noRaceImprovement = wallToPawn.filter((d) => {
+    const c = d.wallPawnComparison!;
+    return d.opDist + c.guide.opDistanceGain - (d.myDist + c.guide.myDistanceCost) <= d.opDist - d.myDist;
+  }).length;
+  const wallCreatesLead = wallToPawn.filter((d) => {
+    const c = d.wallPawnComparison!;
+    const before = d.opDist - d.myDist;
+    const after = d.opDist + c.guide.opDistanceGain - (d.myDist + c.guide.myDistanceCost);
+    return before <= 0 && after > 0;
+  }).length;
+  console.log(`- 即時効果と探索AIの前進量: 壁が大きい ${wallBetter} / 同じ ${same} / 前進が大きい ${pawnBetter}`);
+  console.log(`- 最後の壁を使う: ${lastWall} 局面`);
+  console.log(`- 壁を置いても歩数リードが増えない: ${noRaceImprovement} 局面`);
+  console.log(`- 壁で歩数上の不利・同点をリードへ変える: ${wallCreatesLead} 局面`);
+
+  console.log(`\n## 壁 → 前進の推定損失上位 ${Math.min(top, wallToPawn.length)} 局面`);
+  for (const [i, d] of [...wallToPawn].sort((a, b) => b.regret - a.regret).slice(0, top).entries()) {
+    const w = d.wallPawnComparison!.guide;
+    const p = d.wallPawnComparison!.expert;
+    console.log(`\n### W${i + 1}. ${phase(d)}・${d.position.ply} 手目・regret ${d.regret}`);
+    console.log(`- 手引き: ${d.guideMove}（相手 +${w.opDistanceGain} / 自分 +${w.myDistanceCost} / 正味 ${w.netGain}歩）`);
+    console.log(`- 探索AI: ${d.expertMove}（前進 ${p.progress}、戻る ${p.backtrack ? 'はい' : 'いいえ'}）`);
+    console.log(`- 壁後: 壁脅威 自分 ${w.myThreat} / 相手 ${w.opThreat}、最短ルート多様性 自分 ${w.myRoutes} / 相手 ${w.opRoutes}`);
+    console.log(`- 前進後: 壁脅威 自分 ${p.myThreat} / 相手 ${p.opThreat}、最短ルート多様性 自分 ${p.myRoutes} / 相手 ${p.opRoutes}`);
+    console.log(`- 残り歩数: 自分 ${d.myDist} / 相手 ${d.opDist}、壁: 自分 ${d.myWalls} / 相手 ${d.opWalls}`);
+    console.log(`- 盤面: 駒 ${d.position.pawns.join(' / ')}、横壁 [${d.position.hWalls.join(' ')}]、縦壁 [${d.position.vWalls.join(' ')}]`);
+    console.log(`- 直前までの棋譜: ${d.position.moves || '（初期局面）'}`);
+  }
+}
+
 const phases = new Map<string, number>();
 for (const d of meaningful) phases.set(phase(d), (phases.get(phase(d)) ?? 0) + 1);
 console.log('\n## 発生する局面');
