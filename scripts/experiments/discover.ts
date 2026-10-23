@@ -192,10 +192,38 @@ if (wallToPawn.length) {
     const after = d.opDist + c.guide.opDistanceGain - (d.myDist + c.guide.myDistanceCost);
     return before <= 0 && after > 0;
   }).length;
+  const distanceBins = [
+    ['自分が残り4歩以内', (d: Disagreement) => d.myDist <= 4],
+    ['自分が残り5〜8歩', (d: Disagreement) => d.myDist >= 5 && d.myDist <= 8],
+    ['自分が残り9歩以上', (d: Disagreement) => d.myDist >= 9],
+  ] as const;
+  for (const [name, includes] of distanceBins) {
+    const at = wallToPawn.filter(includes);
+    if (!at.length) continue;
+    const regret = at.reduce((sum, d) => sum + d.regret, 0) / at.length;
+    console.log(`- ${name}: ${at.length} 局面、平均推定損失 ${regret.toFixed(1)} 点`);
+  }
+  const leadBins = [
+    ['歩数で負け・同点', (d: Disagreement) => d.opDist - d.myDist <= 0],
+    ['1〜3歩リード', (d: Disagreement) => d.opDist - d.myDist >= 1 && d.opDist - d.myDist <= 3],
+    ['4歩以上リード', (d: Disagreement) => d.opDist - d.myDist >= 4],
+  ] as const;
+  for (const [name, includes] of leadBins) {
+    const at = wallToPawn.filter(includes);
+    if (!at.length) continue;
+    const regret = at.reduce((sum, d) => sum + d.regret, 0) / at.length;
+    console.log(`- ${name}: ${at.length} 局面、平均推定損失 ${regret.toFixed(1)} 点`);
+  }
+  const threatDeltas = wallToPawn.map(
+    (d) => d.wallPawnComparison!.expert.myThreat - d.wallPawnComparison!.guide.myThreat,
+  );
+  const pawnPreservesMoreThreat = threatDeltas.filter((n) => n > 0).length;
+  const averageThreatDelta = threatDeltas.reduce((a, b) => a + b, 0) / threatDeltas.length;
   console.log(`- 即時効果と探索AIの前進量: 壁が大きい ${wallBetter} / 同じ ${same} / 前進が大きい ${pawnBetter}`);
   console.log(`- 最後の壁を使う: ${lastWall} 局面`);
   console.log(`- 壁を置いても歩数リードが増えない: ${noRaceImprovement} 局面`);
   console.log(`- 壁で歩数上の不利・同点をリードへ変える: ${wallCreatesLead} 局面`);
+  console.log(`- 前進後のほうが次の壁脅威を多く残す: ${pawnPreservesMoreThreat} 局面、平均差 ${averageThreatDelta.toFixed(2)} 歩`);
 
   console.log(`\n## 壁 → 前進の推定損失上位 ${Math.min(top, wallToPawn.length)} 局面`);
   for (const [i, d] of [...wallToPawn].sort((a, b) => b.regret - a.regret).slice(0, top).entries()) {
