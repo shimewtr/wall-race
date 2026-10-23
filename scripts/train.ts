@@ -52,8 +52,14 @@ const MARGIN = 1;
 const PAIRS_PER_ITER = 64;
 // 判定に使う読みの深さと対局数（深さごとに測って平均する）
 const GATE_SUITE: Record<number, number> = { [DEPTH]: 200 };
+// 400局で僅差なら追加1200局を指し、合計1600局で小さい改善を確認する。
+// 第11世代に対して400局の判定が27回連続48.4〜54.5%で安定した一方、独立した1600局では53.3% ±2.4だったため、
+// 単発55%だけでなく大標本で統計的に50%を上回る経路を設ける。
+const CONFIRM_GATE_SUITE: Record<number, number> = { [DEPTH]: 800 };
+const CONFIRM_GATE_TRIGGER = 0.525;
+const CONFIRM_GATE_THRESHOLD = 0.525;
 // 判定条件の識別子（深さ・対局数・序盤のばらけさせ方・根の壁候補）
-const GATE_VERSION = `${Object.entries(GATE_SUITE).map(([d, n]) => `d${d}x${n}`).join('-')}-o${OPENING_PLIES}t${OPENING_TOP}d${OPENING_DEPTH}-r${WIDE_ROOT_DEFAULT ? 'wide' : 'narrow'}`;
+const GATE_VERSION = `${Object.entries(GATE_SUITE).map(([d, n]) => `d${d}x${n}`).join('-')}-confirm${Object.values(CONFIRM_GATE_SUITE).join('x')}t${CONFIRM_GATE_THRESHOLD * 1000}-o${OPENING_PLIES}t${OPENING_TOP}d${OPENING_DEPTH}-r${WIDE_ROOT_DEFAULT ? 'wide' : 'narrow'}`;
 // 昇格条件: 平均勝率が GATE_THRESHOLD 以上、どの深さでも GATE_FLOOR 以上、初期の重みへの勝率が下がっていない
 const GATE_FLOOR = 0.42;
 const INITIAL_TOLERANCE = 0.03;
@@ -279,18 +285,39 @@ interface MatchResult {
 }
 
 // a の b に対する勝率（0〜1）を深さごとに測って平均する
-async function gate(pool: PairPool, a: Weights, b: Weights): Promise<MatchResult> {
+async function gate(
+  pool: PairPool,
+  a: Weights,
+  b: Weights,
+  suite: Record<number, number> = GATE_SUITE,
+  seedOffset = 0,
+): Promise<MatchResult> {
   const byDepth: Record<string, number> = {};
-  for (const [depth, pairs] of Object.entries(GATE_SUITE)) {
+  for (const [depth, pairs] of Object.entries(suite)) {
     const scores = await pool.runAll(
       Array.from({ length: pairs }, (_, i) => ({
         a,
         b,
         // 判定用の序盤は固定シードにして、毎回同じ条件で比べる
-        opts: { depth: Number(depth), margin: MARGIN, openingPlies: OPENING_PLIES, seed: 1_000_000 + i },
+        opts: { depth: Number(depth), margin: MARGIN, openingPlies: OPENING_PLIES, seed: 1_000_000 + seedOffset + i },
       })),
     );
     byDepth[depth] = round3(scores.reduce((x, y) => x + y, 0) / (pairs * 2));
+  }
+  const values = Object.values(byDepth);
+  return { avg: round3(values.reduce((x, y) => x + y, 0) / values.length), byDepth };
+}
+
+async function confirmGate(pool: PairPool, a: Weights, b: Weights, first: MatchResult): Promise<MatchResult> {
+  const extraSuite = Object.fromEntries(
+    Object.entries(CONFIRM_GATE_SUITE).map(([depth, total]) => [depth, total - (GATE_SUITE[Number(depth)] ?? 0)]),
+  );
+  const extra = await gate(pool, a, b, extraSuite, Math.max(...Object.values(GATE_SUITE)));
+  const byDepth: Record<string, number> = {};
+  for (const [depth, total] of Object.entries(CONFIRM_GATE_SUITE)) {
+    const firstPairs = GATE_SUITE[Number(depth)];
+    const extraPairs = total - firstPairs;
+    byDepth[depth] = round3((first.byDepth[depth] * firstPairs + extra.byDepth[depth] * extraPairs) / total);
   }
   const values = Object.values(byDepth);
   return { avg: round3(values.reduce((x, y) => x + y, 0) / values.length), byDepth };
@@ -386,10 +413,16 @@ async function runOnce(pool: PairPool, minutes: number) {
         if (champion.generation > 0) writeJson(CHAMPION, champion);
       }
       vsChampion = await gate(pool, state.theta, champion.weights);
+      let confirmed = false;
+      if (vsChampion.avg >= CONFIRM_GATE_TRIGGER && vsChampion.avg < GATE_THRESHOLD) {
+        console.log(`  速報 ${fmtMatch(vsChampion)}。僅差なので合計1600局まで追加確認します`);
+        vsChampion = await confirmGate(pool, state.theta, champion.weights, vsChampion);
+        confirmed = true;
+      }
       vsInitial = await gate(pool, state.theta, withDefaults());
       const score = vsChampion.avg;
       promoted =
-        score >= GATE_THRESHOLD &&
+        score >= (confirmed ? CONFIRM_GATE_THRESHOLD : GATE_THRESHOLD) &&
         Math.min(...Object.values(vsChampion.byDepth)) >= GATE_FLOOR &&
         vsInitial.avg >= (champion.vsInitial ?? 0.5) - INITIAL_TOLERANCE;
       console.log(`  対チャンピオン（第 ${champion.generation} 世代）${fmtMatch(vsChampion)}`);
