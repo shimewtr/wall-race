@@ -341,6 +341,29 @@ if (wallToPawn.length) {
       const c = d.wallPawnComparison!;
       return c.guideAfterReply.replyType === 'pawn' && c.expertAfterReply.replyType === 'wall';
     });
+
+    console.log('- 複合条件:');
+    const behindOrTied = (d: Disagreement) => d.opDist - d.myDist <= 0;
+    const weakWall = (d: Disagreement) => d.wallPawnComparison!.guide.netGain <= 1;
+    const farWall = (d: Disagreement) => (d.wallPawnComparison!.guide.routeCutStep ?? 0) >= 7;
+    const notNearGoal = (d: Disagreement) => d.myDist > 4;
+    const initiativeSwing = (d: Disagreement) => {
+      const c = d.wallPawnComparison!;
+      return c.guideAfterReply.replyType === 'pawn' && c.expertAfterReply.replyType === 'wall';
+    };
+    contrast('  歩数で負け・同点 × 即時正味効果1歩以下', (d) => behindOrTied(d) && weakWall(d));
+    contrast('  歩数で負け・同点 × 相手の7歩以上先', (d) => behindOrTied(d) && farWall(d));
+    contrast('  即時正味効果1歩以下 × 相手の7歩以上先', (d) => weakWall(d) && farWall(d));
+    contrast(
+      '  歩数で負け・同点 × 即時正味効果1歩以下 × 相手の7歩以上先',
+      (d) => behindOrTied(d) && weakWall(d) && farWall(d),
+    );
+    contrast('  歩数で負け・同点 × 自分が残り5歩以上', (d) => behindOrTied(d) && notNearGoal(d));
+    contrast(
+      '  歩数で負け・同点 × 即時正味効果1歩以下 × 自分が残り5歩以上',
+      (d) => behindOrTied(d) && weakWall(d) && notNearGoal(d),
+    );
+    contrast('  歩数で負け・同点 × 主導権の逆転', (d) => behindOrTied(d) && initiativeSwing(d));
   }
 
   console.log(`\n## 壁 → 前進の推定損失上位 ${Math.min(top, wallToPawn.length)} 局面`);
