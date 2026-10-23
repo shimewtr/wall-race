@@ -12,6 +12,7 @@ import {
   isOver,
   moveToString,
   shortestDistance,
+  shortestPath,
 } from '../engine/game';
 import { OPENING_PLIES, depthAt, pickAt, rngFrom } from '../train/match';
 import { GUIDE_CURRENT, type GuideParams, guideMove } from './policy';
@@ -76,6 +77,8 @@ export interface WallEffects {
   opThreat: number;
   myRoutes: number;
   opRoutes: number;
+  routeCutStep: number | null;
+  pawnDistanceToWall: number;
 }
 
 export interface PawnEffects {
@@ -127,6 +130,34 @@ function wallNames(s: GameState, orientation: 'h' | 'v'): string[] {
 
 const rounded = (n: number) => Math.round(n * 10) / 10;
 
+function wallCutStep(s: GameState, move: Move, victim: Player): number | null {
+  if (move.type !== 'wall') return null;
+  const path = shortestPath(s, victim);
+  if (!path) return null;
+  for (let i = 0; i + 1 < path.length; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    if (a.x === b.x) {
+      if (move.o === 'h' && move.y === Math.min(a.y, b.y) && (move.x === a.x || move.x === a.x - 1)) return i + 1;
+    } else if (move.o === 'v' && move.x === Math.min(a.x, b.x) && (move.y === a.y || move.y === a.y - 1)) {
+      return i + 1;
+    }
+  }
+  return null;
+}
+
+function pawnDistanceToWall(s: GameState, move: Move, victim: Player): number {
+  if (move.type !== 'wall') return 0;
+  const pawn = s.pawns[victim];
+  const cells = [
+    { x: move.x, y: move.y },
+    { x: move.x + 1, y: move.y },
+    { x: move.x, y: move.y + 1 },
+    { x: move.x + 1, y: move.y + 1 },
+  ];
+  return Math.min(...cells.map((p) => Math.abs(p.x - pawn.x) + Math.abs(p.y - pawn.y)));
+}
+
 function wallEffects(s: GameState, move: Move, me: Player, op: Player, myDist: number, opDist: number): WallEffects {
   const after = applyMove(s, move);
   const opDistanceGain = shortestDistance(after, op) - opDist;
@@ -139,6 +170,8 @@ function wallEffects(s: GameState, move: Move, me: Player, op: Player, myDist: n
     opThreat: maxDetour(after, op),
     myRoutes: rounded(shortestRouteDiversity(after, me)),
     opRoutes: rounded(shortestRouteDiversity(after, op)),
+    routeCutStep: wallCutStep(s, move, op),
+    pawnDistanceToWall: pawnDistanceToWall(s, move, op),
   };
 }
 

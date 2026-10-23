@@ -203,6 +203,23 @@ if (wallToPawn.length) {
     const regret = at.reduce((sum, d) => sum + d.regret, 0) / at.length;
     console.log(`- ${name}: ${at.length} 局面、平均推定損失 ${regret.toFixed(1)} 点`);
   }
+  const cutStepBins = [
+    ['相手の1歩先', (n: number | null) => n === 1],
+    ['相手の2〜3歩先', (n: number | null) => n !== null && n >= 2 && n <= 3],
+    ['相手の4〜6歩先', (n: number | null) => n !== null && n >= 4 && n <= 6],
+    ['相手の7歩以上先', (n: number | null) => n !== null && n >= 7],
+    ['現在の代表最短路以外', (n: number | null) => n === null],
+  ] as const;
+  for (const [name, includes] of cutStepBins) {
+    const at = wallToPawn.filter((d) => includes(d.wallPawnComparison!.guide.routeCutStep));
+    if (!at.length) continue;
+    const regret = at.reduce((sum, d) => sum + d.regret, 0) / at.length;
+    const netGain = at.reduce((sum, d) => sum + d.wallPawnComparison!.guide.netGain, 0) / at.length;
+    const replyPawn = at.filter((d) => d.wallPawnComparison!.guideAfterReply.replyType === 'pawn').length;
+    console.log(
+      `- 壁の位置 ${name}: ${at.length} 局面、平均推定損失 ${regret.toFixed(1)} 点、平均正味効果 ${netGain.toFixed(1)} 歩、相手が前進 ${replyPawn}`,
+    );
+  }
   const leadBins = [
     ['歩数で負け・同点', (d: Disagreement) => d.opDist - d.myDist <= 0],
     ['1〜3歩リード', (d: Disagreement) => d.opDist - d.myDist >= 1 && d.opDist - d.myDist <= 3],
@@ -290,6 +307,7 @@ if (wallToPawn.length) {
     const p = d.wallPawnComparison!.expert;
     console.log(`\n### W${i + 1}. ${phase(d)}・${d.position.ply} 手目・regret ${d.regret}`);
     console.log(`- 手引き: ${d.guideMove}（相手 +${w.opDistanceGain} / 自分 +${w.myDistanceCost} / 正味 ${w.netGain}歩）`);
+    console.log(`- 壁の位置: 相手の代表最短路の ${w.routeCutStep ?? '外'} 歩先、相手駒から壁周辺まで ${w.pawnDistanceToWall} マス`);
     console.log(`- 探索AI: ${d.expertMove}（前進 ${p.progress}、戻る ${p.backtrack ? 'はい' : 'いいえ'}）`);
     console.log(`- 壁後: 壁脅威 自分 ${w.myThreat} / 相手 ${w.opThreat}、最短ルート多様性 自分 ${w.myRoutes} / 相手 ${w.opRoutes}`);
     console.log(`- 前進後: 壁脅威 自分 ${p.myThreat} / 相手 ${p.opThreat}、最短ルート多様性 自分 ${p.myRoutes} / 相手 ${p.opRoutes}`);
