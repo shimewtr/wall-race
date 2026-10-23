@@ -37,3 +37,9 @@ jobs:
           # 引数のクォートは xargs で解釈する（eval と違い、引数がコマンドとして実行されることはない）
           printf '%s' "$ARGS" | xargs npx tsx "scripts/experiments/$SCRIPT.ts" | tee result.txt
           { echo '```'; cat result.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Save result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: experiment-result
+          path: result.txt
