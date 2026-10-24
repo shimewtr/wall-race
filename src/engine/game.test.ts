@@ -541,5 +541,17 @@ describe('評価値 → 勝率の換算', () => {
     expect(winRate(100, cal)).toBeGreaterThan(winRate(0, cal));
     expect(winRate(WIN - 3, cal)).toBe(1);
     expect(winRate(-WIN + 3, cal)).toBe(0);
+    expect(cal.context).toBeDefined();
+  });
+
+  it('文脈付き校正は不確実性が高い局面の大きな評価差を弱める', () => {
+    const cal = {
+      a: 0.02,
+      b: 0,
+      context: { scale: 100, coefficients: [2, 0, 0, -1] as [number, number, number, number] },
+    };
+    expect(winRate(100, cal, 1)).toBeLessThan(winRate(100, cal, 0));
+    expect(winRate(-100, cal, 1)).toBeGreaterThan(winRate(-100, cal, 0));
+    expect(winRate(0, cal, 1)).toBe(0.5);
   });
 });

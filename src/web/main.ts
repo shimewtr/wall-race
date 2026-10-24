@@ -17,7 +17,7 @@ import {
 } from '../engine/game';
 import { type AiRequest, type AiResponse, EVAL_DEPTH } from './ai.worker';
 import { calibration, champion } from './champion';
-import { winRate } from '../train/calibrate';
+import { calibrationUncertainty, winRate } from '../train/calibrate';
 
 type Mode = 'human-ai' | 'ai-human' | 'human-human' | 'ai-ai';
 
@@ -360,7 +360,14 @@ function renderEval(score: number | null) {
 
 // 手番側から見た評価値 → 青の勝率
 function blueWinRate(score: number, turn: Player): number {
-  const mover = winRate(score, calibration!);
+  const s = current();
+  const uncertainty = calibrationUncertainty({
+    myDist: shortestDistance(s, s.turn),
+    opDist: shortestDistance(s, (1 - s.turn) as Player),
+    myWalls: s.wallsLeft[s.turn],
+    opWalls: s.wallsLeft[(1 - s.turn) as Player],
+  });
+  const mover = winRate(score, calibration!, uncertainty);
   return turn === 0 ? mover : 1 - mover;
 }
 
