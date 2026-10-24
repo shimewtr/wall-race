@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { moveFromString } from '../../src/engine/game';
 import type { CounterfactualResult } from '../../src/guide/counterfactual';
 import type { Disagreement } from '../../src/guide/discover';
 import { CounterfactualPool, DiscoveryPool } from '../lib/pool';
@@ -66,6 +67,25 @@ const resultName = (result: CounterfactualResult, branch: 'guide' | 'expert') =>
   return value === 1 ? '勝ち' : value === 0.5 ? '引分' : '負け';
 };
 const kind = (result: CounterfactualResult) => `${result.disagreement.guideType} → ${result.disagreement.expertType}`;
+const wallSequence = (result: CounterfactualResult, branch: 'guide' | 'expert', player: 'me' | 'opponent') =>
+  result[branch].moves.filter((text, index) => {
+    const move = moveFromString(text);
+    const isMyTurn = index % 2 === 0;
+    return move?.type === 'wall' && (player === 'me' ? isMyTurn : !isMyTurn);
+  });
+const nextOwnWall = (result: CounterfactualResult, branch: 'guide' | 'expert') => {
+  for (let index = 2; index < result[branch].moves.length; index += 2) {
+    const move = moveFromString(result[branch].moves[index]);
+    if (move?.type === 'wall') return { move, text: result[branch].moves[index], delay: index };
+  }
+  return null;
+};
+const wallAnchorDistance = (aText: string, bText: string) => {
+  const a = moveFromString(aText);
+  const b = moveFromString(bText);
+  if (a?.type !== 'wall' || b?.type !== 'wall') return null;
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+};
 
 console.log(`# 反実仮想分析: 手引き AI 対 第 ${champion.generation} 世代`);
 console.log();
@@ -139,6 +159,40 @@ if (wallGroups.some(([, group]) => group.length)) {
     const better = wallGroups[0][1].filter((result) => includes(result.disagreement)).length;
     const other = wallGroups[1][1].filter((result) => includes(result.disagreement)).length;
     console.log(`  - ${name}: ${better} / ${other}`);
+  }
+
+  const focused = results.filter((result) => conditions.at(-1)![1](result.disagreement));
+  console.log('\n## 終盤で先着可能かつ次の壁脅威が改善する局面');
+  console.log(`- 対象: ${focused.length} 局面`);
+  const focusedImproved = focused.filter((result) => score(result, 'expert') > score(result, 'guide'));
+  const focusedOther = focused.filter((result) => score(result, 'expert') <= score(result, 'guide'));
+  for (const [name, group] of [
+    ['改善', focusedImproved],
+    ['非改善', focusedOther],
+  ] as const) {
+    const nextWalls = group.map((result) => nextOwnWall(result, 'expert')).filter((wall) => wall !== null);
+    const distances = group
+      .map((result) => {
+        const next = nextOwnWall(result, 'expert');
+        return next ? wallAnchorDistance(result.disagreement.expertMove, next.text) : null;
+      })
+      .filter((distance) => distance !== null);
+    console.log(
+      `- ${name}: ${group.length}局面 / 次の自分の壁あり ${nextWalls.length} / 平均 ${average(nextWalls.map((wall) => wall.delay))}手後 / アンカー距離 ${average(distances)}`,
+    );
+  }
+  for (const [index, result] of focused.entries()) {
+    const d = result.disagreement;
+    const next = nextOwnWall(result, 'expert');
+    console.log(`\n### F${index + 1}. ${score(result, 'expert') > score(result, 'guide') ? '改善' : '非改善'}・${d.position.ply}手目`);
+    console.log(`- 最初の壁: 手引き ${d.guideMove} / 探索AI ${d.expertMove}`);
+    console.log(
+      `- 探索AI側の壁列: 自分 [${wallSequence(result, 'expert', 'me').join(' ')}] / 相手 [${wallSequence(result, 'expert', 'opponent').join(' ')}]`,
+    );
+    console.log(
+      `- 次の自分の壁: ${next ? `${next.text}（${next.delay}手後、アンカー距離${wallAnchorDistance(d.expertMove, next.text)}、向き${d.expertMove.at(-1) === next.text.at(-1) ? '同じ' : '変更'}）` : 'なし'}`,
+    );
+    console.log(`- 探索AI側の最初の16手: ${result.expert.moves.slice(0, 16).join(' ')}`);
   }
 }
 
