@@ -58,6 +58,7 @@ interface Position {
 interface EditResult {
   position: Position;
   wall: WallRecord;
+  mode: 'geometry' | 'reserve' | 'both';
   after3: Move;
   after4: Move;
   afterChanged: boolean;
@@ -123,22 +124,25 @@ for (const position of selected) {
   const beforeMe = shortestDistance(position.state, me);
   const beforeOp = shortestDistance(position.state, other(me));
   for (const wall of position.walls) {
-    const edited = cloneState(position.state);
-    const { x, y, o } = wall.move;
-    (o === 'h' ? edited.hWalls : edited.vWalls)[y * WALL_SLOTS + x] = 0;
-    edited.wallsLeft[wall.owner]++;
-    const after3 = choice(edited, 3);
-    const after4 = choice(edited, 4);
-    edits.push({
-      position,
-      wall,
-      after3,
-      after4,
-      afterChanged: moveToString(after3) !== moveToString(after4),
-      myBlock: beforeMe - shortestDistance(edited, me),
-      opBlock: beforeOp - shortestDistance(edited, other(me)),
-      connected: isConnected(position.state, wall),
-    });
+    for (const mode of ['geometry', 'reserve', 'both'] as const) {
+      const edited = cloneState(position.state);
+      const { x, y, o } = wall.move;
+      if (mode !== 'reserve') (o === 'h' ? edited.hWalls : edited.vWalls)[y * WALL_SLOTS + x] = 0;
+      if (mode !== 'geometry') edited.wallsLeft[wall.owner]++;
+      const after3 = choice(edited, 3);
+      const after4 = choice(edited, 4);
+      edits.push({
+        position,
+        wall,
+        mode,
+        after3,
+        after4,
+        afterChanged: moveToString(after3) !== moveToString(after4),
+        myBlock: beforeMe - shortestDistance(edited, me),
+        opBlock: beforeOp - shortestDistance(edited, other(me)),
+        connected: isConnected(position.state, wall),
+      });
+    }
   }
 }
 
@@ -151,8 +155,9 @@ const describe = (rows: EditResult[]) => {
   return `横壁 ${horizontal}/${rows.length}（${pct(horizontal, rows.length)}）、連結壁 ${connected}/${rows.length}（${pct(connected, rows.length)}）、8手以内 ${recent}/${rows.length}（${pct(recent, rows.length)}）、自分を塞ぐ ${avg(rows.map((row) => row.myBlock))}歩、相手を塞ぐ ${avg(rows.map((row) => row.opBlock))}歩`;
 };
 
-const resolved = edits.filter((row) => row.position.changed && !row.afterChanged);
-const created = edits.filter((row) => !row.position.changed && row.afterChanged);
+const both = edits.filter((row) => row.mode === 'both');
+const resolved = both.filter((row) => row.position.changed && !row.afterChanged);
+const created = both.filter((row) => !row.position.changed && row.afterChanged);
 const unchangedFromChanged = edits.filter((row) => row.position.changed && row.afterChanged);
 const target = changed.filter((row) => row.move3.type === 'pawn' && row.move4.type === 'wall' && row.move4.o === 'h');
 const targetEdits = resolved.filter((row) => target.includes(row.position));
@@ -162,8 +167,14 @@ const deepBecomesShallow = resolved.filter((row) => moveToString(row.after4) ===
 console.log(`# 第 ${champion.generation} 世代の判断境界分析`);
 console.log();
 console.log(`収集: ${positions.length}局面、変更群${changed.length}・安定群${stable.length}を編集（シード${seed}）`);
-console.log(`壁1枚除去: 変更群${edits.filter((row) => row.position.changed).length}件、安定群${edits.filter((row) => !row.position.changed).length}件`);
+console.log(`壁ごとの編集: 変更群${both.filter((row) => row.position.changed).length}件、安定群${both.filter((row) => !row.position.changed).length}件`);
 console.log('\n## 境界をまたいだ編集');
+for (const [mode, name] of [['geometry', '盤面から除去だけ'], ['reserve', '残り壁を返すだけ'], ['both', '除去して残り壁も返す']] as const) {
+  const modeRows = edits.filter((row) => row.mode === mode);
+  const modeResolved = modeRows.filter((row) => row.position.changed && !row.afterChanged);
+  const modeCreated = modeRows.filter((row) => !row.position.changed && row.afterChanged);
+  console.log(`- ${name}: 解消 ${modeResolved.length}件・${new Set(modeResolved.map((row) => row.position)).size}/${changed.length}局面 / 発生 ${modeCreated.length}件・${new Set(modeCreated.map((row) => row.position)).size}/${stable.length}局面`);
+}
 console.log(`- 不一致が解消: ${resolved.length}件 / 変更群編集、対象局面 ${new Set(resolved.map((row) => row.position)).size}/${changed.length}`);
 console.log(`- 不一致が発生: ${created.length}件 / 安定群編集、対象局面 ${new Set(created.map((row) => row.position)).size}/${stable.length}`);
 console.log(`- 解消の向き: 3手側が元の4手へ ${shallowBecomesDeep.length}件 / 4手側が元の3手へ ${deepBecomesShallow.length}件`);
@@ -171,7 +182,7 @@ console.log(`- 前進→横壁の対象局面: ${target.length}/${changed.length
 
 console.log('\n## 除いた壁の性質');
 console.log(`- 不一致を解消: ${describe(resolved)}`);
-console.log(`- 不一致を維持: ${describe(unchangedFromChanged)}`);
+console.log(`- 不一致を維持: ${describe(unchangedFromChanged.filter((row) => row.mode === 'both'))}`);
 console.log(`- 不一致を発生: ${describe(created)}`);
 console.log(`- 前進→横壁を解消: ${describe(targetEdits)}`);
 
