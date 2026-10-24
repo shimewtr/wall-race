@@ -69,8 +69,8 @@ const RESET_BELOW = 0.47;
 // 対戦相手の選び方: この確率で現チャンピオン、残りは過去の世代（初期の重みを含む）から無作為
 const CHAMPION_RATE = 0.5;
 // pathDiff は「1 歩 = 10 点」という評価の単位として固定し、他の重みをそれに対して調整する
-// pathCertainty は価値モデルで候補になった段階。compare の対戦を通すまで自動学習では動かさない。
-const FIXED: Feature[] = ['pathDiff', 'pathCertainty'];
+// wallLeverage は価値モデルから得た候補。compare の対戦を通すまで自動学習では動かさない。
+const FIXED: Feature[] = ['pathDiff', 'wallLeverage'];
 const TUNED = FEATURE_NAMES.filter((f) => !FIXED.includes(f));
 
 // ---- 保存データ ----
@@ -221,9 +221,9 @@ function commitAndPush(message: string): boolean {
 // 目安は「その特徴量が典型的に 1 動いたとき、1 歩（10 点）の何割くらいか」。
 const PERTURB: Record<Feature, number> = {
   pathDiff: 0,
-  pathCertainty: 0,
   rowDiff: 1,
   wallDiff: 1,
+  wallLeverage: 0,
   urgency: 4,
   wallsWhenClose: 2,
   center: 1,

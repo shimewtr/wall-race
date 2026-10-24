@@ -27,9 +27,9 @@ import {
 // 学習で重みが決まると、そのまま「何を重視すべきか」の人間向けの説明になる。
 export const FEATURES = {
   pathDiff: '最短経路の差（相手の残り歩数 - 自分の残り歩数）',
-  pathCertainty: '壁が減るほど確実になる最短経路の差（最短経路差 × (1 - 盤上の残り壁/20)）',
   rowDiff: '壁を無視した前進の差（相手のゴールまでの段数 - 自分の段数）',
   wallDiff: '残り壁の差（自分 - 相手）',
+  wallLeverage: '歩数差が大きい局面での残り壁の価値（残り壁の差 × 最短経路差の絶対値）',
   urgency: '終盤の 1 歩の重さ（1/(自分の歩数+1) - 1/(相手の歩数+1)）',
   wallsWhenClose: '相手がゴールに近いほど自分の壁に価値（自分の壁/(相手の歩数+1) - 相手の壁/(自分の歩数+1)）',
   center: '中央寄り（相手の中央からの横ずれ - 自分の横ずれ）',
@@ -47,9 +47,9 @@ export const FEATURE_NAMES = Object.keys(FEATURES) as Feature[];
 
 export const DEFAULT_WEIGHTS: Weights = {
   pathDiff: 10,
-  pathCertainty: 0,
   rowDiff: 0,
   wallDiff: 2,
+  wallLeverage: 0,
   urgency: 20,
   wallsWhenClose: 0,
   center: 0,
@@ -416,9 +416,9 @@ export function features(
   const opNetThreat = withNetWallThreat ? maxNetDetour(s, op, myDist, opDist) : 0;
   return {
     pathDiff: opDist - myDist,
-    pathCertainty: (opDist - myDist) * (1 - (s.wallsLeft[0] + s.wallsLeft[1]) / 20),
     rowDiff: Math.abs(goalRow(op) - o.y) - Math.abs(goalRow(me) - my.y),
     wallDiff: s.wallsLeft[me] - s.wallsLeft[op],
+    wallLeverage: (s.wallsLeft[me] - s.wallsLeft[op]) * Math.abs(opDist - myDist),
     urgency: 1 / (myDist + 1) - 1 / (opDist + 1),
     wallsWhenClose: s.wallsLeft[me] / (opDist + 1) - s.wallsLeft[op] / (myDist + 1),
     center: Math.abs(o.x - 4) - Math.abs(my.x - 4),

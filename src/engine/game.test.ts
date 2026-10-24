@@ -444,16 +444,16 @@ describe('序盤のばらけさせ方（pickFromTop）', () => {
   });
 });
 
-describe('特徴量 pathCertainty', () => {
-  it('壁が残っている間は距離差を割り引き、壁が尽きると距離差そのものになる', () => {
+describe('特徴量 wallLeverage', () => {
+  it('壁枚数差を最短経路差の絶対値で重くする', () => {
     const s = initialState();
     s.pawns[0].y = 7;
+    s.wallsLeft = [8, 6];
     expect(features(s).pathDiff).toBe(1);
-    expect(features(s).pathCertainty).toBe(0);
-    s.wallsLeft = [5, 5];
-    expect(features(s).pathCertainty).toBe(0.5);
-    s.wallsLeft = [0, 0];
-    expect(features(s).pathCertainty).toBe(1);
+    expect(features(s).wallLeverage).toBe(2);
+    s.pawns[0].y = 6;
+    expect(features(s).pathDiff).toBe(2);
+    expect(features(s).wallLeverage).toBe(4);
   });
 });
 

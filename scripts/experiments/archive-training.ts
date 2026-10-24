@@ -40,9 +40,9 @@ const league = [
     .sort()
     .map((name) => withDefaults(JSON.parse(readFileSync(join(trainingDir, 'champions', name), 'utf8')).weights)),
 ];
-const TUNED = FEATURE_NAMES.filter((feature) => feature !== 'pathDiff' && feature !== 'pathCertainty');
+const TUNED = FEATURE_NAMES.filter((feature) => feature !== 'pathDiff' && feature !== 'wallLeverage');
 const PERTURB: Record<Feature, number> = {
-  pathDiff: 0, pathCertainty: 0, rowDiff: 1, wallDiff: 1, urgency: 4, wallsWhenClose: 2, center: 1,
+  pathDiff: 0, rowDiff: 1, wallDiff: 1, wallLeverage: 0, urgency: 4, wallsWhenClose: 2, center: 1,
   adjacent: 2, lockedRace: 5, wallThreat: 2, netWallThreat: 2, wallChain: 1, routeDiversity: 2,
 };
 
