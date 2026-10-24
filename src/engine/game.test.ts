@@ -444,19 +444,6 @@ describe('序盤のばらけさせ方（pickFromTop）', () => {
   });
 });
 
-describe('特徴量 wallLeverage', () => {
-  it('壁枚数差を最短経路差の絶対値で重くする', () => {
-    const s = initialState();
-    s.pawns[0].y = 7;
-    s.wallsLeft = [8, 6];
-    expect(features(s).pathDiff).toBe(1);
-    expect(features(s).wallLeverage).toBe(2);
-    s.pawns[0].y = 6;
-    expect(features(s).pathDiff).toBe(2);
-    expect(features(s).wallLeverage).toBe(4);
-  });
-});
-
 describe('特徴量 wallThreat', () => {
   it('初期局面では壁 1 枚で相手を 1 歩遠回りさせられる', () => {
     expect(maxDetour(initialState(), 0)).toBe(1);

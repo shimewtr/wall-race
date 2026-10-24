@@ -35,13 +35,12 @@ const league: Weights[] = [
     .map((f) => withDefaults(JSON.parse(readFileSync(join(DIR, 'champions', f), 'utf8')).weights)),
 ];
 
-const fixed = new Set<Feature>(['pathDiff', 'wallLeverage']);
+const fixed = new Set<Feature>(['pathDiff']);
 const tuned = FEATURE_NAMES.filter((f) => !fixed.has(f));
 const perturb: Record<Feature, number> = {
   pathDiff: 0,
   rowDiff: 1,
   wallDiff: 1,
-  wallLeverage: 0,
   urgency: 4,
   wallsWhenClose: 2,
   center: 1,
