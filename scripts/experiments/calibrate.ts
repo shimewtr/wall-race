@@ -5,7 +5,7 @@
 //
 // 例: npx tsx scripts/experiments/calibrate.ts --games 300
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { withDefaults } from '../../src/engine/ai';
@@ -35,13 +35,43 @@ const fit = fitCalibration(records.slice(0, half), champion.generation);
 console.log(`第 ${champion.generation} 世代: a=${fit.a.toPrecision(4)} b=${fit.b.toFixed(3)}（${fit.samples} 局面で当てはめ）`);
 
 const buckets = Array.from({ length: 10 }, () => ({ n: 0, won: 0 }));
-for (const g of records.slice(half)) {
+const observations: Array<{
+  seed: number;
+  ply: number;
+  move: string;
+  predicted: number;
+  won: number;
+  phase: '序盤' | '中盤' | '終盤';
+  walls: '壁0〜6枚' | '壁7〜13枚' | '壁14〜20枚';
+  race: '2歩以上先行' | 'ほぼ互角' | '2歩以上遅れ';
+  myDist: number;
+  opDist: number;
+  myWalls: number;
+  opWalls: number;
+}> = [];
+for (const [gameIndex, g] of records.slice(half).entries()) {
   if (g.winner === null) continue;
   for (const m of g.moves) {
     const p = winRate(m.score, fit);
     const b = buckets[Math.min(9, Math.floor(p * 10))];
     b.n++;
-    if (g.winner === m.player) b.won++;
+    const won = Number(g.winner === m.player);
+    if (won) b.won++;
+    const totalWalls = m.myWalls + m.opWalls;
+    observations.push({
+      seed: base + half + gameIndex,
+      ply: m.ply,
+      move: m.move,
+      predicted: p,
+      won,
+      phase: m.ply < 12 ? '序盤' : Math.min(m.myDist, m.opDist) <= 4 ? '終盤' : '中盤',
+      walls: totalWalls <= 6 ? '壁0〜6枚' : totalWalls <= 13 ? '壁7〜13枚' : '壁14〜20枚',
+      race: m.opDist - m.myDist >= 2 ? '2歩以上先行' : m.myDist - m.opDist >= 2 ? '2歩以上遅れ' : 'ほぼ互角',
+      myDist: m.myDist,
+      opDist: m.opDist,
+      myWalls: m.myWalls,
+      opWalls: m.opWalls,
+    });
   }
 }
 console.log('\n残り半分の対局での確認（換算した勝率 → 実際に勝った割合）:');
@@ -49,6 +79,52 @@ buckets.forEach((b, i) => {
   if (b.n > 0) console.log(`  ${i * 10}〜${i * 10 + 10}%: ${((b.won / b.n) * 100).toFixed(1)}%（${b.n} 局面）`);
 });
 
+const summarize = (items: typeof observations) => ({
+  n: items.length,
+  predicted: items.reduce((sum, item) => sum + item.predicted, 0) / items.length,
+  actual: items.reduce((sum, item) => sum + item.won, 0) / items.length,
+  brier: items.reduce((sum, item) => sum + (item.predicted - item.won) ** 2, 0) / items.length,
+});
+const grouped = (key: 'phase' | 'walls' | 'race') =>
+  [...new Set(observations.map((item) => item[key]))].map((name) => ({
+    name,
+    ...summarize(observations.filter((item) => item[key] === name)),
+  }));
+const groups = {
+  phase: grouped('phase'),
+  walls: grouped('walls'),
+  race: grouped('race'),
+};
+const printGroups = (title: string, items: Array<ReturnType<typeof summarize> & { name: string }>) => {
+  console.log(`\n${title}（予測 → 実勝率、差、Brier）:`);
+  for (const item of items) {
+    const gap = item.actual - item.predicted;
+    console.log(`  ${item.name}: ${(item.predicted * 100).toFixed(1)}% → ${(item.actual * 100).toFixed(1)}%、${gap >= 0 ? '+' : ''}${(gap * 100).toFixed(1)}pt、${item.brier.toFixed(3)}（${item.n}局面）`);
+  }
+};
+printGroups('フェーズ別', groups.phase);
+printGroups('盤上の残り壁別', groups.walls);
+printGroups('最短距離差別', groups.race);
+
+const highConfidenceErrors = observations
+  .filter((item) => (item.predicted >= 0.8 && item.won === 0) || (item.predicted <= 0.2 && item.won === 1))
+  .sort((a, b) => Math.abs(b.predicted - b.won) - Math.abs(a.predicted - a.won));
+console.log(`\n高信頼（80%以上）で外した局面: ${highConfidenceErrors.length}/${observations.length}（${((highConfidenceErrors.length / observations.length) * 100).toFixed(1)}%）`);
+for (const item of highConfidenceErrors.slice(0, 12)) {
+  console.log(`  seed=${item.seed} ply=${item.ply} ${item.move}: 予測${(item.predicted * 100).toFixed(1)}% → ${item.won ? '勝ち' : '負け'}、${item.phase}、距離${item.myDist}-${item.opDist}、壁${item.myWalls}-${item.opWalls}`);
+}
+
 const all = fitCalibration(records, champion.generation);
 console.log('\ntraining/calibration.json に保存する内容（全対局で当てはめ）:');
 console.log(JSON.stringify(all));
+writeFileSync('experiment-output.json', `${JSON.stringify({
+  generation: champion.generation,
+  games,
+  depth: Number(args.depth),
+  seed: base,
+  validation: summarize(observations),
+  buckets,
+  groups,
+  highConfidenceErrors,
+  calibration: all,
+}, null, 2)}\n`);
