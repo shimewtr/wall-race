@@ -5,9 +5,10 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { recentCells, search, withDefaults } from '../../src/engine/ai';
-import { type GameState, type Move, type Player, applyMove, initialState, moveFromString, moveToString } from '../../src/engine/game';
+import { type GameState, type Move, type Player, applyMove, initialState, isOver, moveFromString, moveToString } from '../../src/engine/game';
 import { type Calibration, calibrationUncertainty, winRate } from '../../src/train/calibrate';
 import type { GameRecord, MoveRecord } from '../../src/train/record';
+import { rngFrom } from '../../src/train/match';
 import { RecordPool } from '../lib/pool';
 
 const { values: args } = parseArgs({
@@ -16,6 +17,7 @@ const { values: args } = parseArgs({
     limit: { type: 'string', default: '120' },
     depth: { type: 'string', default: '3' },
     seed: { type: 'string', default: '99400000' },
+    rollouts: { type: 'string', default: '0' },
   },
 });
 
@@ -26,6 +28,7 @@ const games = Number(args.games);
 const limit = Number(args.limit);
 const depth = Number(args.depth);
 const seed = Number(args.seed);
+const rollouts = Number(args.rollouts);
 
 const pool = new RecordPool();
 const records = await pool.runAll(Array.from({ length: games }, (_, i) => ({
@@ -133,7 +136,28 @@ const probabilityFor = (move: MoveRecord, player: Player) => {
   return move.player === player ? mover : 1 - mover;
 };
 
-const analyze = (item: PositionRef) => {
+const rollout = (startHistory: GameState[], firstMove: Move, rolloutSeed: number, player: Player) => {
+  const history = [...startHistory, applyMove(startHistory.at(-1)!, firstMove)];
+  const startPly = history.at(-1)!.ply;
+  const rng = rngFrom(rolloutSeed);
+  while (!isOver(history.at(-1)!)) {
+    const state = history.at(-1)!;
+    const relativePly = state.ply - startPly;
+    const result = search(state, {
+      maxDepth: relativePly < 6 ? 2 : 3,
+      weights: champion.weights,
+      margin: 1,
+      pickFromTop: relativePly < 6 ? 3 : 1,
+      rng,
+      recent: recentCells(history, state.turn),
+    });
+    history.push(applyMove(state, result.move));
+  }
+  const winner = history.at(-1)!.winner;
+  return winner === null ? 0.5 : winner === player ? 1 : 0;
+};
+
+const analyze = (item: PositionRef, withRollouts = false) => {
   const record = records[item.gameIndex];
   const history = replay(record, item.moveIndex);
   const state = history.at(-1)!;
@@ -148,6 +172,17 @@ const analyze = (item: PositionRef) => {
     }
   }
   const trigger = flipIndex > item.moveIndex ? record.moves[flipIndex - 1] : null;
+  let counterfactual: { rollouts: number; depth3Score: number; depth4Score: number; delta: number } | null = null;
+  if (withRollouts && rollouts > 0 && moveToString(shallow.move) !== moveToString(deep.move)) {
+    let depth3Score = 0;
+    let depth4Score = 0;
+    for (let i = 0; i < rollouts; i++) {
+      const rolloutSeed = seed + 1_000_000 + item.gameIndex * rollouts + i;
+      depth3Score += rollout(history, shallow.move, rolloutSeed, state.turn);
+      depth4Score += rollout(history, deep.move, rolloutSeed, state.turn);
+    }
+    counterfactual = { rollouts, depth3Score, depth4Score, delta: depth4Score - depth3Score };
+  }
   return {
     seed: item.seed,
     game: item.gameIndex + 1,
@@ -175,11 +210,12 @@ const analyze = (item: PositionRef) => {
     depthTransition: transition(shallow.move, deep.move),
     pliesToFlip: flipIndex < 0 ? null : flipIndex - item.moveIndex,
     trigger: trigger ? { move: trigger.move, type: trigger.type, kind: trigger.kind ?? null } : null,
+    counterfactual,
   };
 };
 
-const errorAnalysis = errors.map(analyze);
-const controlAnalysis = controls.map(analyze);
+const errorAnalysis = errors.map((item) => analyze(item, true));
+const controlAnalysis = controls.map((item) => analyze(item));
 const pct = (count: number, total: number) => total === 0 ? '-' : `${(count / total * 100).toFixed(1)}%`;
 const countBy = <T>(items: T[], value: (item: T) => string) => Object.fromEntries(
   [...items.reduce((map, item) => map.set(value(item), (map.get(value(item)) ?? 0) + 1), new Map<string, number>())]
@@ -195,11 +231,19 @@ console.log(`深さ変更の内訳: ${JSON.stringify(countBy(errorAnalysis.filte
 console.log(`形勢を初めて反転させた手: ${JSON.stringify(countBy(errorAnalysis.filter((item) => item.trigger), (item) => `${item.trigger!.type}:${item.trigger!.kind ?? '-'}`))}`);
 const flips = errorAnalysis.flatMap((item) => item.pliesToFlip === null ? [] : [item.pliesToFlip]);
 console.log(`反転までの手数: 平均${(flips.reduce((sum, value) => sum + value, 0) / flips.length).toFixed(1)}手 / ${flips.length}局面で観測`);
+const counterfactuals = errorAnalysis.flatMap((item) => item.counterfactual ? [item.counterfactual] : []);
+if (counterfactuals.length > 0) {
+  const depth3Score = counterfactuals.reduce((sum, item) => sum + item.depth3Score, 0);
+  const depth4Score = counterfactuals.reduce((sum, item) => sum + item.depth4Score, 0);
+  const total = counterfactuals.reduce((sum, item) => sum + item.rollouts, 0);
+  console.log(`判断差${counterfactuals.length}局面の反実仮想: 3手の手 ${pct(depth3Score, total)} / 4手の手 ${pct(depth4Score, total)} / 差 ${((depth4Score - depth3Score) / total * 100).toFixed(1)}pt（各${total}追跡）`);
+  console.log(`局面単位: 4手の手が改善 ${counterfactuals.filter((item) => item.delta > 0).length} / 悪化 ${counterfactuals.filter((item) => item.delta < 0).length} / 同じ ${counterfactuals.filter((item) => item.delta === 0).length}`);
+}
 
 writeFileSync('experiment-output.json', `${JSON.stringify({
   version: 1,
   championGeneration: champion.generation,
-  source: { games, limit, depth, seed },
+  source: { games, limit, depth, seed, rollouts },
   errors: errorAnalysis,
   controls: controlAnalysis,
 }, null, 2)}\n`);
