@@ -298,18 +298,21 @@ function canonicalFlipX(s: GameState, attacker: Player): boolean {
 
 function canonicalDetourWall(s: GameState, attacker: Player, walls: DetourResult['walls']) {
   const flipX = canonicalFlipX(s, attacker);
-  const key = (wall: DetourResult['walls'][number]) => [
-    attacker === 0 ? wall.y : WALL_SLOTS - 1 - wall.y,
-    flipX ? WALL_SLOTS - 1 - wall.x : wall.x,
-    wall.o === 'h' ? 0 : 1,
-  ];
-  return walls.reduce((best, wall) => {
-    const a = key(wall);
-    const b = key(best);
-    return a[0] < b[0] || (a[0] === b[0] && (a[1] < b[1] || (a[1] === b[1] && a[2] < b[2])))
-      ? wall
-      : best;
-  });
+  const key = (wall: DetourResult['walls'][number]) => {
+    const y = attacker === 0 ? wall.y : WALL_SLOTS - 1 - wall.y;
+    const x = flipX ? WALL_SLOTS - 1 - wall.x : wall.x;
+    return (y * WALL_SLOTS + x) * 2 + (wall.o === 'h' ? 0 : 1);
+  };
+  let best = walls[0];
+  let bestKey = key(best);
+  for (let i = 1; i < walls.length; i++) {
+    const candidateKey = key(walls[i]);
+    if (candidateKey < bestKey) {
+      best = walls[i];
+      bestKey = candidateKey;
+    }
+  }
+  return best;
 }
 
 // 全候補を二重に調べると評価が重くなりすぎるため、1 枚目は即時効果が最大の候補に絞る。
