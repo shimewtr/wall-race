@@ -7,6 +7,7 @@ import type { MatchConfig } from '../../src/train/match';
 import type { GameRecord, RecordJob } from '../../src/train/record';
 import type { GuideJob } from '../../src/guide/match';
 import type { DiscoveryGame, DiscoveryJob } from '../../src/guide/discover';
+import type { CounterfactualJob, CounterfactualResult } from '../../src/guide/counterfactual';
 
 export interface PairJob {
   a: Partial<Weights>;
@@ -98,5 +99,12 @@ export class GuidePool extends WorkerPool<GuideJob, number> {
 export class DiscoveryPool extends WorkerPool<DiscoveryJob, DiscoveryGame> {
   constructor(size?: number) {
     super(new URL('./discover-worker.ts', import.meta.url), size);
+  }
+}
+
+// 発見局面で 2 つの候補手を強制し、その後の勝敗を探索 AI 同士で比較する
+export class CounterfactualPool extends WorkerPool<CounterfactualJob, CounterfactualResult> {
+  constructor(size?: number) {
+    super(new URL('./counterfactual-worker.ts', import.meta.url), size);
   }
 }
