@@ -13,6 +13,7 @@ import {
   moveToString,
   shortestDistance,
   shortestPath,
+  wallFits,
 } from '../engine/game';
 import { OPENING_PLIES, depthAt, pickAt, rngFrom } from '../train/match';
 import { GUIDE_CURRENT, type GuideParams, guideMove } from './policy';
@@ -85,6 +86,7 @@ export interface WallEffects {
   opRoutes: number;
   routeCutStep: number | null;
   pawnDistanceToWall: number;
+  extensionNetGain: number;
 }
 
 export interface PawnEffects {
@@ -178,7 +180,37 @@ function wallEffects(s: GameState, move: Move, me: Player, op: Player, myDist: n
     opRoutes: rounded(shortestRouteDiversity(after, op)),
     routeCutStep: wallCutStep(s, move, op),
     pawnDistanceToWall: pawnDistanceToWall(s, move, op),
+    extensionNetGain: wallExtensionNetGain(s, after, move, me, op),
   };
+}
+
+function wallExtensionNetGain(s: GameState, after: GameState, move: Move, me: Player, op: Player): number {
+  if (move.type !== 'wall' || s.wallsLeft[me] <= 1) return 0;
+  const opDist = shortestDistance(after, op);
+  const myDist = shortestDistance(after, me);
+  let best = 0;
+  const anchors =
+    move.o === 'h'
+      ? [
+          [move.x - 2, move.y],
+          [move.x + 2, move.y],
+        ]
+      : [
+          [move.x, move.y - 2],
+          [move.x, move.y + 2],
+        ];
+  for (const [x, y] of anchors) {
+    if (x < 0 || y < 0 || x >= WALL_SLOTS || y >= WALL_SLOTS || !wallFits(after, x, y, move.o)) continue;
+    const walls = move.o === 'h' ? after.hWalls : after.vWalls;
+    const index = y * WALL_SLOTS + x;
+    walls[index] = 1;
+    const opAfter = shortestDistance(after, op);
+    const myAfter = shortestDistance(after, me);
+    walls[index] = 0;
+    if (opAfter < 0 || myAfter < 0) continue;
+    best = Math.max(best, opAfter - opDist - (myAfter - myDist));
+  }
+  return best;
 }
 
 function pawnEffects(

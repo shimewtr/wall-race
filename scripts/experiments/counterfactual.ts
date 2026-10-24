@@ -134,6 +134,9 @@ if (wallGroups.some(([, group]) => group.length)) {
     console.log(
       `  - 探索AI壁による差: 正味 ${average(disagreements.map((d) => d.wallComparison!.expert.netGain - d.wallComparison!.guide.netGain))} / 次の壁脅威 ${average(disagreements.map((d) => d.wallComparison!.expert.myThreat - d.wallComparison!.expert.opThreat - (d.wallComparison!.guide.myThreat - d.wallComparison!.guide.opThreat)))}`,
     );
+    console.log(
+      `  - 端につなぐ2枚目の正味効果: 手引き ${average(disagreements.map((d) => d.wallComparison!.guide.extensionNetGain))} / 探索AI ${average(disagreements.map((d) => d.wallComparison!.expert.extensionNetGain))}`,
+    );
   }
   console.log('- 条件別の内訳（改善 / 同じ・悪化）:');
   const conditions = [
@@ -186,6 +189,9 @@ if (wallGroups.some(([, group]) => group.length)) {
     const next = nextOwnWall(result, 'expert');
     console.log(`\n### F${index + 1}. ${score(result, 'expert') > score(result, 'guide') ? '改善' : '非改善'}・${d.position.ply}手目`);
     console.log(`- 最初の壁: 手引き ${d.guideMove} / 探索AI ${d.expertMove}`);
+    console.log(
+      `- 端につなぐ2枚目の正味効果: 手引き ${d.wallComparison!.guide.extensionNetGain} / 探索AI ${d.wallComparison!.expert.extensionNetGain}`,
+    );
     console.log(
       `- 探索AI側の壁列: 自分 [${wallSequence(result, 'expert', 'me').join(' ')}] / 相手 [${wallSequence(result, 'expert', 'opponent').join(' ')}]`,
     );
