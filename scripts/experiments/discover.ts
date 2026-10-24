@@ -156,6 +156,20 @@ if (wallToWall.length) {
     contrast('相手が残り4歩以内', (d) => d.opDist <= 4);
     contrast('即時効果・脅威差とも探索AIが良い', (d) => netBetter(d) && threatBetter(d));
     contrast('即時効果は同等以下だが脅威差は探索AIが良い', (d) => !netBetter(d) && threatBetter(d));
+    const weakGuideWall = (d: Disagreement) => d.wallComparison!.guide.netGain <= 1;
+    const behindOrTied = (d: Disagreement) => d.opDist - d.myDist <= 0;
+    const lastWall = (d: Disagreement) => d.myWalls === 1;
+    const opponentNearGoal = (d: Disagreement) => d.opDist <= 4;
+    console.log('  - 複合条件:');
+    contrast('  手引きの弱い壁 × 歩数で負け・同点', (d) => weakGuideWall(d) && behindOrTied(d));
+    contrast('  手引きの弱い壁 × 自分の最後の壁', (d) => weakGuideWall(d) && lastWall(d));
+    contrast('  手引きの弱い壁 × 相手が残り4歩以内', (d) => weakGuideWall(d) && opponentNearGoal(d));
+    contrast('  手引きの弱い壁 × 探索AIの脅威差が良い', (d) => weakGuideWall(d) && threatBetter(d));
+    contrast('  手引きの弱い壁 × 探索AIの最短路多様性差が良い', (d) => weakGuideWall(d) && routesBetter(d));
+    contrast(
+      '  手引きの弱い壁 × 探索AIの壁は正味2歩以上',
+      (d) => weakGuideWall(d) && d.wallComparison!.expert.netGain >= 2,
+    );
   }
 }
 
