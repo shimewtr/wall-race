@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { checkSymmetry, type Symmetry, type SymmetryCheck } from '../../src/analysis/symmetry';
-import { recentCells, search } from '../../src/engine/ai';
+import { FEATURE_NAMES, recentCells, search, type Feature } from '../../src/engine/ai';
 import { type GameState, applyMove, initialState, isOver, moveToString } from '../../src/engine/game';
 import { OPENING_PLIES, depthAt, pickAt, rngFrom } from '../../src/train/match';
 
@@ -18,6 +18,7 @@ const { values: args } = parseArgs({
     depth: { type: 'string', default: '3' },
     'sample-every': { type: 'string', default: '4' },
     examples: { type: 'string', default: '10' },
+    disable: { type: 'string', default: '' },
   },
 });
 
@@ -30,6 +31,15 @@ const depth = Number(args.depth);
 const sampleEvery = Number(args['sample-every']);
 const maxExamples = Number(args.examples);
 const symmetries: Symmetry[] = ['left-right', 'swap-vertical'];
+const disabled = args.disable
+  .split(',')
+  .map((name) => name.trim())
+  .filter(Boolean);
+for (const name of disabled) {
+  if (!FEATURE_NAMES.includes(name as Feature)) throw new Error(`unknown feature: ${name}`);
+}
+const weights = { ...champion.weights };
+for (const name of disabled) weights[name as Feature] = 0;
 
 interface Observation extends SymmetryCheck {
   game: number;
@@ -50,7 +60,7 @@ for (let game = 0; game < games && sampled < maxPositions; game++) {
   while (!isOver(state) && sampled < maxPositions) {
     if (state.ply % sampleEvery === game % sampleEvery) {
       // 履歴由来の repeatPenalty は別の検査対象にし、ここでは盤面だけの対称性を測る。
-      const options = { maxDepth: depth, weights: champion.weights, repeatPenalty: 0 };
+      const options = { maxDepth: depth, weights, repeatPenalty: 0 };
       const original = search(state, options);
       const position = moves.join(' ');
       for (const symmetry of symmetries) {
@@ -67,7 +77,7 @@ for (let game = 0; game < games && sampled < maxPositions; game++) {
 
     const move = search(state, {
       maxDepth: depthAt(state.ply, depth, OPENING_PLIES),
-      weights: champion.weights,
+      weights,
       margin: 1,
       pickFromTop: pickAt(state.ply, OPENING_PLIES),
       rng,
@@ -88,6 +98,7 @@ console.log(`# 第 ${champion.generation} 世代の対称性分析`);
 console.log();
 console.log(`収集: ${Math.min(games, new Set(observations.map((row) => row.game)).size)} 局から ${sampled} 局面`);
 console.log(`探索: ${depth} 手読み、${sampleEvery} 手間隔、履歴ペナルティなし`);
+console.log(`無効化した特徴量: ${disabled.join(', ') || 'なし'}`);
 console.log('左右反転と、上下反転＋プレイヤー交換を検査しています。');
 
 for (const symmetry of symmetries) {
