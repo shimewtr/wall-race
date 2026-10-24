@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { recentCells, search } from '../../src/engine/ai';
-import { type GameState, type Move, applyMove, initialState, isOver, moveToString } from '../../src/engine/game';
+import { type GameState, type Move, type Player, applyMove, initialState, isOver, moveToString, shortestDistance } from '../../src/engine/game';
 import { OPENING_PLIES, depthAt, pickAt, rngFrom } from '../../src/train/match';
 
 const { values: args } = parseArgs({
@@ -44,6 +44,10 @@ interface Observation {
   ply: number;
   turn: number;
   position: string;
+  myDist: number;
+  opDist: number;
+  myWalls: number;
+  opWalls: number;
   choices: DepthChoice[];
 }
 
@@ -78,6 +82,10 @@ for (let game = 0; game < games && observations.length < maxPositions; game++) {
         ply: state.ply,
         turn: state.turn,
         position: moves.join(' '),
+        myDist: shortestDistance(state, state.turn),
+        opDist: shortestDistance(state, (1 - state.turn) as Player),
+        myWalls: state.wallsLeft[state.turn],
+        opWalls: state.wallsLeft[(1 - state.turn) as Player],
         choices,
       });
     }
@@ -122,7 +130,7 @@ for (let depth = 1; depth < maxDepth; depth++) {
   console.log(`\n### ${depth}手 → ${depth + 1}手`);
   console.log(`- 最善手変更: ${moveChanges.length} / ${pairs.length}（${pct(moveChanges.length, pairs.length)}）`);
   console.log(`- 前進・壁の変更: ${typeChanges.length} / ${pairs.length}（${pct(typeChanges.length, pairs.length)}）`);
-  console.log(`- 評価の符号反転: ${signChanges.length} / ${pairs.length}（${pct(signChanges.length, pairs.length)}）`);
+  console.log(`- 生の評価値の符号反転: ${signChanges.length} / ${pairs.length}（${pct(signChanges.length, pairs.length)}）`);
   const kinds = new Map<string, number>();
   for (const pair of moveChanges) {
     const name = transitionName(...pair);
@@ -143,14 +151,41 @@ const oscillations = observations.filter((row) =>
   row.choices.some((choice, index, choices) => index >= 2 && choice.move === choices[index - 2].move && choice.move !== choices[index - 1].move),
 );
 console.log(`- 一度変えて元の手へ戻る局面: ${oscillations.length} / ${observations.length}（${pct(oscillations.length, observations.length)}）`);
+const oddEvenOscillations = observations.filter(
+  (row) =>
+    maxDepth >= 4 &&
+    row.choices[0].move === row.choices[2].move &&
+    row.choices[1].move === row.choices[3].move &&
+    row.choices[0].move !== row.choices[1].move,
+);
+if (maxDepth >= 4) {
+  console.log(`- 1=3手・2=4手の偶奇振動: ${oddEvenOscillations.length} / ${observations.length}（${pct(oddEvenOscillations.length, observations.length)}）`);
+}
+console.log('- 注: 生の評価値は `myWalls` など探索深度の偶奇で基準がずれる項を含むため、深さをまたいだ符号をそのまま勝敗予測として比較しない。');
+
+const lastDepthChanges = observations.filter(
+  (row) => row.choices[maxDepth - 2].move !== row.choices[maxDepth - 1].move,
+);
+console.log(`\n## ${maxDepth - 1}手→${maxDepth}手で変わる局面のフェーズ`);
+for (const [name, includes] of [
+  ['序盤（0〜19手）', (row: Observation) => row.ply < 20],
+  ['中盤（20〜39手）', (row: Observation) => row.ply >= 20 && row.ply < 40],
+  ['終盤（40手以降）', (row: Observation) => row.ply >= 40],
+] as const) {
+  const all = observations.filter(includes);
+  const changed = lastDepthChanges.filter(includes);
+  console.log(`- ${name}: ${changed.length} / ${all.length}（${pct(changed.length, all.length)}）`);
+}
+console.log(
+  `- 変更局面の平均: 自分あと${average(lastDepthChanges.map((row) => row.myDist))}歩 / 相手あと${average(lastDepthChanges.map((row) => row.opDist))}歩 / 自分の壁${average(lastDepthChanges.map((row) => row.myWalls))}枚 / 相手の壁${average(lastDepthChanges.map((row) => row.opWalls))}枚`,
+);
 
 console.log('\n## 深さ別の探索量');
 for (let depth = 1; depth <= maxDepth; depth++) {
   console.log(`- ${depth}手読み: 平均 ${average(observations.map((row) => row.choices[depth - 1].nodes))} ノード`);
 }
 
-const lastChanges = observations
-  .filter((row) => row.choices[maxDepth - 2].move !== row.choices[maxDepth - 1].move)
+const lastChanges = lastDepthChanges
   .sort((a, b) => {
     const ac = a.choices[maxDepth - 2].type !== a.choices[maxDepth - 1].type ? 1 : 0;
     const bc = b.choices[maxDepth - 2].type !== b.choices[maxDepth - 1].type ? 1 : 0;
