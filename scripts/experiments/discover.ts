@@ -421,6 +421,24 @@ if (pawnToWall.length) {
     console.log(`- 探索AIの壁の位置 ${name}: ${at.length} 局面`);
   }
   for (const [name, includes] of stateBins) console.log(`- ${name}: ${pawnToWall.filter(includes).length} 局面`);
+  const canArriveFirst = (d: Disagreement, branch: 'guideAfterReply' | 'expertAfterReply') => {
+    const c = d.pawnWallComparison![branch];
+    return c.winner === d.position.guidePlayer || (c.winner === null && c.raceLead >= 0);
+  };
+  const wallOnlyKeepsRaceAlive = (d: Disagreement) =>
+    canArriveFirst(d, 'expertAfterReply') && !canArriveFirst(d, 'guideAfterReply');
+  const wallOnly = pawnToWall.filter(wallOnlyKeepsRaceAlive).length;
+  const bothBehind = pawnToWall.filter(
+    (d) => !canArriveFirst(d, 'expertAfterReply') && !canArriveFirst(d, 'guideAfterReply'),
+  ).length;
+  const averageReplySwing =
+    pawnToWall.reduce(
+      (sum, d) => sum + d.pawnWallComparison!.expertAfterReply.raceLead - d.pawnWallComparison!.guideAfterReply.raceLead,
+      0,
+    ) / pawnToWall.length;
+  console.log(`- 最善応手後も壁側だけ先着可能: ${wallOnly} 局面`);
+  console.log(`- 最善応手後は両案とも歩数で後手: ${bothBehind} 局面`);
+  console.log(`- 最善応手後の歩数リード差（壁 − 前進）: 平均 ${averageReplySwing.toFixed(2)} 歩`);
   const winningPawnToWall = winningMeaningful.filter((d) => d.pawnWallComparison);
   if (winningPawnToWall.length) {
     console.log('- 勝敗対照:');
@@ -443,6 +461,22 @@ if (pawnToWall.length) {
     for (const [name, includes] of stateBins) contrast(name, includes);
     contrast('前進後に相手が壁で返す', (d) => d.pawnWallComparison!.guideAfterReply.replyType === 'wall');
     contrast('壁後に相手が前進で返す', (d) => d.pawnWallComparison!.expertAfterReply.replyType === 'pawn');
+    contrast('最善応手後も壁側だけ先着可能', wallOnlyKeepsRaceAlive);
+    contrast(
+      '最善応手後は両案とも歩数で後手',
+      (d) => !canArriveFirst(d, 'expertAfterReply') && !canArriveFirst(d, 'guideAfterReply'),
+    );
+    contrast(
+      '壁側が最善応手後の歩数リードを2歩以上改善',
+      (d) => d.pawnWallComparison!.expertAfterReply.raceLead - d.pawnWallComparison!.guideAfterReply.raceLead >= 2,
+    );
+    contrast(
+      '壁側だけ相手の壁が尽きて先着可能',
+      (d) =>
+        d.pawnWallComparison!.expertAfterReply.opWalls === 0 &&
+        canArriveFirst(d, 'expertAfterReply') &&
+        !(d.pawnWallComparison!.guideAfterReply.opWalls === 0 && canArriveFirst(d, 'guideAfterReply')),
+    );
     const behindOrTied = (d: Disagreement) => d.opDist - d.myDist <= 0;
     const opponentNearGoal = (d: Disagreement) => d.opDist <= 4;
     const lastWall = (d: Disagreement) => d.myWalls === 1;
@@ -455,6 +489,19 @@ if (pawnToWall.length) {
       '  歩数で負け・同点 × 相手が残り4歩以内 × 自分の壁が残り1枚',
       (d) => behindOrTied(d) && opponentNearGoal(d) && lastWall(d),
     );
+    contrast(
+      '  緊急防御条件 × 最善応手後も壁側だけ先着可能',
+      (d) => behindOrTied(d) && opponentNearGoal(d) && lastWall(d) && wallOnlyKeepsRaceAlive(d),
+    );
+    contrast(
+      '  緊急防御条件 × 最善応手後は両案とも歩数で後手',
+      (d) =>
+        behindOrTied(d) &&
+        opponentNearGoal(d) &&
+        lastWall(d) &&
+        !canArriveFirst(d, 'expertAfterReply') &&
+        !canArriveFirst(d, 'guideAfterReply'),
+    );
     contrast('  相手が残り4歩以内 × 相手の1歩先を塞ぐ壁', (d) => opponentNearGoal(d) && immediateBlock(d));
   }
 
@@ -466,6 +513,10 @@ if (pawnToWall.length) {
     console.log(`- 手引き: ${d.guideMove}（前進 ${p.progress}、戻る ${p.backtrack ? 'はい' : 'いいえ'}）`);
     console.log(`- 探索AI: ${d.expertMove}（相手 +${w.opDistanceGain} / 自分 +${w.myDistanceCost} / 正味 ${w.netGain}歩）`);
     console.log(`- 壁の位置: 相手の代表最短路の ${w.routeCutStep ?? '外'} 歩先、相手駒から壁周辺まで ${w.pawnDistanceToWall} マス`);
+    const gp = d.pawnWallComparison!.guideAfterReply;
+    const ew = d.pawnWallComparison!.expertAfterReply;
+    console.log(`- 前進手への最善応手: ${gp.reply ?? '（決着）'}、応手後の残り歩数 自分 ${gp.myDist} / 相手 ${gp.opDist}、リード ${gp.raceLead}`);
+    console.log(`- 壁手への最善応手: ${ew.reply ?? '（決着）'}、応手後の残り歩数 自分 ${ew.myDist} / 相手 ${ew.opDist}、リード ${ew.raceLead}`);
     console.log(`- 残り歩数: 自分 ${d.myDist} / 相手 ${d.opDist}、壁: 自分 ${d.myWalls} / 相手 ${d.opWalls}`);
     console.log(`- 盤面: 駒 ${d.position.pawns.join(' / ')}、横壁 [${d.position.hWalls.join(' ')}]、縦壁 [${d.position.vWalls.join(' ')}]`);
     console.log(`- 直前までの棋譜: ${d.position.moves || '（初期局面）'}`);
