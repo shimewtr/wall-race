@@ -115,6 +115,31 @@ if (wallGroups.some(([, group]) => group.length)) {
       `  - 探索AI壁による差: 正味 ${average(disagreements.map((d) => d.wallComparison!.expert.netGain - d.wallComparison!.guide.netGain))} / 次の壁脅威 ${average(disagreements.map((d) => d.wallComparison!.expert.myThreat - d.wallComparison!.expert.opThreat - (d.wallComparison!.guide.myThreat - d.wallComparison!.guide.opThreat)))}`,
     );
   }
+  console.log('- 条件別の内訳（改善 / 同じ・悪化）:');
+  const conditions = [
+    ['自分が残り5歩以内', (d: Disagreement) => d.myDist <= 5],
+    ['歩数で先着可能', (d: Disagreement) => d.opDist - d.myDist >= 0],
+    ['探索AI壁の次の壁脅威が2歩以上良い', (d: Disagreement) => {
+      const wall = d.wallComparison!;
+      return wall.expert.myThreat - wall.expert.opThreat - (wall.guide.myThreat - wall.guide.opThreat) >= 2;
+    }],
+    [
+      '残り5歩以内 × 先着可能 × 次の壁脅威が2歩以上良い',
+      (d: Disagreement) => {
+        const wall = d.wallComparison!;
+        return (
+          d.myDist <= 5 &&
+          d.opDist - d.myDist >= 0 &&
+          wall.expert.myThreat - wall.expert.opThreat - (wall.guide.myThreat - wall.guide.opThreat) >= 2
+        );
+      },
+    ],
+  ] as const;
+  for (const [name, includes] of conditions) {
+    const better = wallGroups[0][1].filter((result) => includes(result.disagreement)).length;
+    const other = wallGroups[1][1].filter((result) => includes(result.disagreement)).length;
+    console.log(`  - ${name}: ${better} / ${other}`);
+  }
 }
 
 console.log('\n## 勝敗が変わった局面');
