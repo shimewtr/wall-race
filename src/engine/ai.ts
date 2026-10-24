@@ -82,8 +82,6 @@ export interface SearchOptions {
   wideRoot?: boolean;
   // 評価の上位この数の手からランダムに選ぶ（自己対戦の序盤をばらけさせる用）。2 以上なら margin より優先
   pickFromTop?: number;
-  // wallChain の同率候補を対称形に依存しない順で選ぶ。false は比較実験用の旧方式。
-  wallChainCanonical?: boolean;
 }
 
 export const REPEAT_PENALTY = 8;
@@ -128,7 +126,6 @@ interface DetourResult {
 const detourCache = new Map<number, DetourResult>();
 const netDetourCache = new Map<number, number>();
 const wallChainCache = new Map<number, number>();
-const legacyWallChainCache = new Map<number, number>();
 // 計測用（profile 実験で使う）
 export const detourStats = { calls: 0, misses: 0 };
 const DETOUR_CACHE_LIMIT = 500_000;
@@ -317,11 +314,10 @@ function canonicalDetourWall(s: GameState, attacker: Player, walls: DetourResult
 
 // 全候補を二重に調べると評価が重くなりすぎるため、1 枚目は即時効果が最大の候補に絞る。
 // 同率なら盤面を正規化した順で1枚だけ選び、対称性と速度を両立する。
-export function maxWallChain(s: GameState, attacker: Player, victimDist?: number, canonical = true): number {
+export function maxWallChain(s: GameState, attacker: Player, victimDist?: number): number {
   if (s.wallsLeft[attacker] < 2) return 0;
   const key = detourKey(s, attacker);
-  const cache = canonical ? wallChainCache : legacyWallChainCache;
-  const cached = cache.get(key);
+  const cached = wallChainCache.get(key);
   if (cached !== undefined) return cached;
 
   const victim = (1 - attacker) as Player;
@@ -333,7 +329,7 @@ export function maxWallChain(s: GameState, attacker: Player, victimDist?: number
     detourCache.set(key, first);
   }
   if (first.walls.length === 0) return 0;
-  const c = canonical ? canonicalDetourWall(s, attacker, first.walls) : first.walls[0];
+  const c = canonicalDetourWall(s, attacker, first.walls);
   const walls = c.o === 'h' ? s.hWalls : s.vWalls;
   const i = c.y * WALL_SLOTS + c.x;
   walls[i] = 1;
@@ -341,8 +337,8 @@ export function maxWallChain(s: GameState, attacker: Player, victimDist?: number
   // この「1枚目を置いた盤面」は実際の探索でも現れうるので、2枚目の計算結果も通常キャッシュへ残す。
   const result = maxDetour(s, attacker, c.afterDist);
   walls[i] = 0;
-  if (cache.size >= DETOUR_CACHE_LIMIT) cache.clear();
-  cache.set(key, result);
+  if (wallChainCache.size >= DETOUR_CACHE_LIMIT) wallChainCache.clear();
+  wallChainCache.set(key, result);
   return result;
 }
 
@@ -410,7 +406,6 @@ export function features(
   withRouteDiversity = true,
   withWallChain = true,
   withNetWallThreat = true,
-  wallChainCanonical = true,
 ): Weights {
   const me = s.turn;
   const op = (1 - me) as Player;
@@ -434,7 +429,7 @@ export function features(
     wallThreat: withThreat ? maxDetour(s, me, opDist) - maxDetour(s, op, myDist) : 0,
     netWallThreat: myNetThreat - opNetThreat,
     wallChain: withWallChain
-      ? maxWallChain(s, me, opDist, wallChainCanonical) - maxWallChain(s, op, myDist, wallChainCanonical)
+      ? maxWallChain(s, me, opDist) - maxWallChain(s, op, myDist)
       : 0,
     routeDiversity: withRouteDiversity ? shortestRouteDiversity(s, me) - shortestRouteDiversity(s, op) : 0,
   };
@@ -446,7 +441,6 @@ export function evaluate(
   w: Weights = DEFAULT_WEIGHTS,
   myDist?: number,
   opDist?: number,
-  wallChainCanonical = true,
 ): number {
   if (s.winner !== null) return s.winner === s.turn ? WIN : -WIN;
   if (s.draw) return 0;
@@ -458,7 +452,6 @@ export function evaluate(
     w.routeDiversity !== 0,
     w.wallChain !== 0,
     w.netWallThreat !== 0,
-    wallChainCanonical,
   );
   let score = 0;
   for (const k of FEATURE_NAMES) score += w[k] * f[k];
@@ -593,7 +586,6 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
   const noise = opts.noise ?? 0;
   const margin = opts.margin ?? 0;
   const pickFromTop = opts.pickFromTop ?? 1;
-  const wallChainCanonical = opts.wallChainCanonical ?? true;
   const deadline = opts.timeMs ? Date.now() + opts.timeMs : Infinity;
   let nodes = 0;
 
@@ -613,7 +605,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
       if (st.winner === null) return 0;
       return st.winner === st.turn ? WIN - ply : -WIN + ply;
     }
-    if (depth === 0) return evaluate(st, weights, myDist, opDist, wallChainCanonical);
+    if (depth === 0) return evaluate(st, weights, myDist, opDist);
     let best = -Infinity;
     for (const c of orderedMoves(st)) {
       const [cm, co] = childDistances(c, myDist, opDist);
@@ -624,7 +616,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
       if (v > alpha) alpha = v;
       if (alpha >= beta) break;
     }
-    return best === -Infinity ? evaluate(st, weights, myDist, opDist, wallChainCanonical) : best;
+    return best === -Infinity ? evaluate(st, weights, myDist, opDist) : best;
   };
 
   const rootMoves = orderedMoves(s, opts.wideRoot ?? WIDE_ROOT_DEFAULT);
