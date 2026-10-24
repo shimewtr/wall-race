@@ -116,6 +116,47 @@ if (wallToWall.length) {
     const average = values.reduce((a, b) => a + b, 0) / values.length;
     console.log(`- ${name}: 探索AIが良い ${better} / 同じ ${same} / 平均差 ${average.toFixed(2)}`);
   }
+  const winningWallToWall = winningMeaningful.filter((d) => d.wallComparison);
+  if (winningWallToWall.length) {
+    console.log('- 勝敗対照:');
+    const contrast = (name: string, includes: (d: Disagreement) => boolean) => {
+      const losing = wallToWall.filter(includes).length;
+      const winning = winningWallToWall.filter(includes).length;
+      const losingRate = (losing / wallToWall.length) * 100;
+      const winningRate = (winning / winningWallToWall.length) * 100;
+      console.log(
+        `  - ${name}: 敗戦 ${losing}（${losingRate.toFixed(1)}%）/ 勝利 ${winning}（${winningRate.toFixed(1)}%）/ 差 ${(losingRate - winningRate).toFixed(1)}pt`,
+      );
+    };
+    const netBetter = (d: Disagreement) => d.wallComparison!.expert.netGain > d.wallComparison!.guide.netGain;
+    const threatBetter = (d: Disagreement) =>
+      d.wallComparison!.expert.myThreat - d.wallComparison!.expert.opThreat >
+      d.wallComparison!.guide.myThreat - d.wallComparison!.guide.opThreat;
+    const routesBetter = (d: Disagreement) =>
+      d.wallComparison!.expert.myRoutes - d.wallComparison!.expert.opRoutes >
+      d.wallComparison!.guide.myRoutes - d.wallComparison!.guide.opRoutes;
+    const expertCloser = (d: Disagreement) => {
+      const guideStep = d.wallComparison!.guide.routeCutStep ?? Infinity;
+      const expertStep = d.wallComparison!.expert.routeCutStep ?? Infinity;
+      return expertStep < guideStep;
+    };
+    console.log(`  - 敗戦中: ${wallToWall.length} 局面 / 勝利中: ${winningWallToWall.length} 局面`);
+    contrast('探索AIの壁の即時正味効果が大きい', netBetter);
+    contrast('探索AIの壁の脅威差が良い', threatBetter);
+    contrast('探索AIの壁の最短路多様性差が良い', routesBetter);
+    contrast('探索AIの壁が相手の4歩以上を奪う', (d) => d.wallComparison!.expert.netGain >= 4);
+    contrast('手引きの壁の即時正味効果が1歩以下', (d) => d.wallComparison!.guide.netGain <= 1);
+    contrast('探索AIの壁のほうが相手駒に近い', expertCloser);
+    contrast('探索AIは相手の1歩先、手引きはそれ以外', (d) => {
+      const c = d.wallComparison!;
+      return c.expert.routeCutStep === 1 && c.guide.routeCutStep !== 1;
+    });
+    contrast('自分の最後の壁', (d) => d.myWalls === 1);
+    contrast('歩数で負け・同点', (d) => d.opDist - d.myDist <= 0);
+    contrast('相手が残り4歩以内', (d) => d.opDist <= 4);
+    contrast('即時効果・脅威差とも探索AIが良い', (d) => netBetter(d) && threatBetter(d));
+    contrast('即時効果は同等以下だが脅威差は探索AIが良い', (d) => !netBetter(d) && threatBetter(d));
+  }
 }
 
 const pawnToPawn = meaningful.filter((d) => d.pawnComparison);
