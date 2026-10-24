@@ -82,6 +82,8 @@ export interface SearchOptions {
   wideRoot?: boolean;
   // 評価の上位この数の手からランダムに選ぶ（自己対戦の序盤をばらけさせる用）。2 以上なら margin より優先
   pickFromTop?: number;
+  // wallChain の即時効果が同率の1枚目をすべて調べる。false は比較実験用の旧方式。
+  wallChainAllTies?: boolean;
 }
 
 export const REPEAT_PENALTY = 8;
@@ -126,6 +128,7 @@ interface DetourResult {
 const detourCache = new Map<number, DetourResult>();
 const netDetourCache = new Map<number, number>();
 const wallChainCache = new Map<number, number>();
+const legacyWallChainCache = new Map<number, number>();
 // 計測用（profile 実験で使う）
 export const detourStats = { calls: 0, misses: 0 };
 const DETOUR_CACHE_LIMIT = 500_000;
@@ -274,10 +277,11 @@ function computeBestDetour(s: GameState, attacker: Player, victimDist: number): 
 // 2 枚の壁を続けて使ったとき、最善の 1 枚だけより何歩多く遠回りさせられるか。
 // 全候補を二重に調べると評価が重くなりすぎるため、1 枚目は即時効果が最大の候補に絞る。
 // 同率最大の候補はすべて調べ、左右・上下の走査順に依存しない値にする。
-export function maxWallChain(s: GameState, attacker: Player, victimDist?: number): number {
+export function maxWallChain(s: GameState, attacker: Player, victimDist?: number, allTies = true): number {
   if (s.wallsLeft[attacker] < 2) return 0;
   const key = detourKey(s, attacker);
-  const cached = wallChainCache.get(key);
+  const cache = allTies ? wallChainCache : legacyWallChainCache;
+  const cached = cache.get(key);
   if (cached !== undefined) return cached;
 
   const victim = (1 - attacker) as Player;
@@ -290,7 +294,8 @@ export function maxWallChain(s: GameState, attacker: Player, victimDist?: number
   }
   if (first.walls.length === 0) return 0;
   let result = 0;
-  for (const c of first.walls) {
+  const firstWalls = allTies ? first.walls : first.walls.slice(0, 1);
+  for (const c of firstWalls) {
     const walls = c.o === 'h' ? s.hWalls : s.vWalls;
     const i = c.y * WALL_SLOTS + c.x;
     walls[i] = 1;
@@ -299,8 +304,8 @@ export function maxWallChain(s: GameState, attacker: Player, victimDist?: number
     result = Math.max(result, maxDetour(s, attacker, c.afterDist));
     walls[i] = 0;
   }
-  if (wallChainCache.size >= DETOUR_CACHE_LIMIT) wallChainCache.clear();
-  wallChainCache.set(key, result);
+  if (cache.size >= DETOUR_CACHE_LIMIT) cache.clear();
+  cache.set(key, result);
   return result;
 }
 
@@ -368,6 +373,7 @@ export function features(
   withRouteDiversity = true,
   withWallChain = true,
   withNetWallThreat = true,
+  wallChainAllTies = true,
 ): Weights {
   const me = s.turn;
   const op = (1 - me) as Player;
@@ -390,13 +396,21 @@ export function features(
       (s.wallsLeft[op] === 0 && myDist <= opDist ? 1 : 0) - (s.wallsLeft[me] === 0 && opDist < myDist ? 1 : 0),
     wallThreat: withThreat ? maxDetour(s, me, opDist) - maxDetour(s, op, myDist) : 0,
     netWallThreat: myNetThreat - opNetThreat,
-    wallChain: withWallChain ? maxWallChain(s, me, opDist) - maxWallChain(s, op, myDist) : 0,
+    wallChain: withWallChain
+      ? maxWallChain(s, me, opDist, wallChainAllTies) - maxWallChain(s, op, myDist, wallChainAllTies)
+      : 0,
     routeDiversity: withRouteDiversity ? shortestRouteDiversity(s, me) - shortestRouteDiversity(s, op) : 0,
   };
 }
 
 // 手番側から見た静的評価
-export function evaluate(s: GameState, w: Weights = DEFAULT_WEIGHTS, myDist?: number, opDist?: number): number {
+export function evaluate(
+  s: GameState,
+  w: Weights = DEFAULT_WEIGHTS,
+  myDist?: number,
+  opDist?: number,
+  wallChainAllTies = true,
+): number {
   if (s.winner !== null) return s.winner === s.turn ? WIN : -WIN;
   if (s.draw) return 0;
   const f = features(
@@ -407,6 +421,7 @@ export function evaluate(s: GameState, w: Weights = DEFAULT_WEIGHTS, myDist?: nu
     w.routeDiversity !== 0,
     w.wallChain !== 0,
     w.netWallThreat !== 0,
+    wallChainAllTies,
   );
   let score = 0;
   for (const k of FEATURE_NAMES) score += w[k] * f[k];
@@ -541,6 +556,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
   const noise = opts.noise ?? 0;
   const margin = opts.margin ?? 0;
   const pickFromTop = opts.pickFromTop ?? 1;
+  const wallChainAllTies = opts.wallChainAllTies ?? true;
   const deadline = opts.timeMs ? Date.now() + opts.timeMs : Infinity;
   let nodes = 0;
 
@@ -560,7 +576,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
       if (st.winner === null) return 0;
       return st.winner === st.turn ? WIN - ply : -WIN + ply;
     }
-    if (depth === 0) return evaluate(st, weights, myDist, opDist);
+    if (depth === 0) return evaluate(st, weights, myDist, opDist, wallChainAllTies);
     let best = -Infinity;
     for (const c of orderedMoves(st)) {
       const [cm, co] = childDistances(c, myDist, opDist);
@@ -571,7 +587,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
       if (v > alpha) alpha = v;
       if (alpha >= beta) break;
     }
-    return best === -Infinity ? evaluate(st, weights, myDist, opDist) : best;
+    return best === -Infinity ? evaluate(st, weights, myDist, opDist, wallChainAllTies) : best;
   };
 
   const rootMoves = orderedMoves(s, opts.wideRoot ?? WIDE_ROOT_DEFAULT);
