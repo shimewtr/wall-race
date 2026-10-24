@@ -222,7 +222,6 @@ const PERTURB: Record<Feature, number> = {
   pathDiff: 0,
   rowDiff: 1,
   wallDiff: 1,
-  myWalls: 0.5,
   urgency: 4,
   wallsWhenClose: 2,
   center: 1,

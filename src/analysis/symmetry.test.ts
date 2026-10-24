@@ -48,7 +48,6 @@ it('wallChain を含む探索評価が左右の候補走査順に依存しない
     pathDiff: 10,
     rowDiff: -1.671,
     wallDiff: 19.743,
-    myWalls: 4.9,
     urgency: 675.456,
     wallsWhenClose: 54.977,
     center: -1.119,
