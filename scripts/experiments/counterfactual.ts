@@ -16,6 +16,7 @@ const { values: args } = parseArgs({
     top: { type: 'string', default: '30' },
     depth: { type: 'string', default: '3' },
     'rollout-depth': { type: 'string', default: '3' },
+    kind: { type: 'string', default: 'all' },
   },
 });
 
@@ -24,6 +25,7 @@ const games = Number(args.games);
 const top = Number(args.top);
 const depth = Number(args.depth);
 const rolloutDepth = Number(args['rollout-depth']);
+const requestedKind = args.kind;
 
 const discoveryPool = new DiscoveryPool();
 const gamesFound = await discoveryPool.runAll(
@@ -41,6 +43,8 @@ const positionKey = (d: Disagreement) =>
 const unique = new Map<string, Disagreement>();
 for (const disagreement of gamesFound.flatMap((game) => game.disagreements)) {
   if (disagreement.guideWon || disagreement.regret < 1) continue;
+  const disagreementKind = `${disagreement.guideType}-${disagreement.expertType}`;
+  if (requestedKind !== 'all' && requestedKind !== disagreementKind) continue;
   const key = positionKey(disagreement);
   const previous = unique.get(key);
   if (!previous || disagreement.regret > previous.regret) unique.set(key, disagreement);
@@ -67,6 +71,7 @@ console.log(`# 反実仮想分析: 手引き AI 対 第 ${champion.generation} �
 console.log();
 console.log(`発見対局: ${games} 局（${depth} 手読み）`);
 console.log(`終局追跡: 敗戦中・推定損失1点以上の上位 ${results.length} 局面（${rolloutDepth} 手読み）`);
+console.log(`不一致型: ${requestedKind}`);
 console.log('各局面で最初の候補手だけを変え、その後は同じ探索 AI 同士で終局まで指しています。');
 
 const improved = results.filter((result) => score(result, 'expert') > score(result, 'guide'));
@@ -87,6 +92,31 @@ for (const name of kinds) {
   console.log(`- ${name}: 改善 ${better} / 同じ ${same} / 悪化 ${worse}（計 ${group.length}）`);
 }
 
+const average = (values: number[]) => (values.length ? (values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2) : '-');
+const wallGroups = [
+  ['改善', improved.filter((result) => result.disagreement.wallComparison)],
+  ['同じ・悪化', [...unchanged, ...worsened].filter((result) => result.disagreement.wallComparison)],
+] as const;
+if (wallGroups.some(([, group]) => group.length)) {
+  console.log('\n## 壁 → 壁の勝敗別特徴');
+  for (const [name, group] of wallGroups) {
+    const disagreements = group.map((result) => result.disagreement);
+    console.log(`- ${name}（${group.length}局面）:`);
+    console.log(
+      `  - 残り歩数平均: 自分 ${average(disagreements.map((d) => d.myDist))} / 相手 ${average(disagreements.map((d) => d.opDist))}`,
+    );
+    console.log(
+      `  - 手引き壁: 正味 ${average(disagreements.map((d) => d.wallComparison!.guide.netGain))} / 次の壁脅威差 ${average(disagreements.map((d) => d.wallComparison!.guide.myThreat - d.wallComparison!.guide.opThreat))}`,
+    );
+    console.log(
+      `  - 探索AI壁: 正味 ${average(disagreements.map((d) => d.wallComparison!.expert.netGain))} / 次の壁脅威差 ${average(disagreements.map((d) => d.wallComparison!.expert.myThreat - d.wallComparison!.expert.opThreat))}`,
+    );
+    console.log(
+      `  - 探索AI壁による差: 正味 ${average(disagreements.map((d) => d.wallComparison!.expert.netGain - d.wallComparison!.guide.netGain))} / 次の壁脅威 ${average(disagreements.map((d) => d.wallComparison!.expert.myThreat - d.wallComparison!.expert.opThreat - (d.wallComparison!.guide.myThreat - d.wallComparison!.guide.opThreat)))}`,
+    );
+  }
+}
+
 console.log('\n## 勝敗が変わった局面');
 const changed = results.filter((result) => score(result, 'guide') !== score(result, 'expert'));
 if (changed.length === 0) console.log('- なし');
@@ -96,6 +126,13 @@ for (const [i, result] of changed.entries()) {
   console.log(`- 手引き ${d.guideMove}: ${resultName(result, 'guide')}（残り ${result.guide.remainingPlies} 手）`);
   console.log(`- 探索AI ${d.expertMove}: ${resultName(result, 'expert')}（残り ${result.expert.remainingPlies} 手）`);
   console.log(`- 残り歩数: 自分 ${d.myDist} / 相手 ${d.opDist}、壁: 自分 ${d.myWalls} / 相手 ${d.opWalls}`);
+  if (d.wallComparison) {
+    const guide = d.wallComparison.guide;
+    const expert = d.wallComparison.expert;
+    console.log(
+      `- 壁効果: 手引き 正味${guide.netGain}・脅威差${guide.myThreat - guide.opThreat} / 探索AI 正味${expert.netGain}・脅威差${expert.myThreat - expert.opThreat}`,
+    );
+  }
   console.log(`- 盤面: 駒 ${d.position.pawns.join(' / ')}、横壁 [${d.position.hWalls.join(' ')}]、縦壁 [${d.position.vWalls.join(' ')}]`);
   console.log(`- 直前までの棋譜: ${d.position.moves || '（初期局面）'}`);
 }
