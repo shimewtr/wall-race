@@ -46,6 +46,7 @@ it('wallChain を含む探索評価が左右の候補走査順に依存しない
   const state = replay('e2 e8 d2 f8 d3 e8 d4 e7 d5 e6 d6 e5 d7 e4 d8 c8h e8 e8h f8 f7v f7 e3 f6 e2');
   const weights: Weights = {
     pathDiff: 10,
+    pathCertainty: 0,
     rowDiff: -1.671,
     wallDiff: 19.743,
     urgency: 675.456,
