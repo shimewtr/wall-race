@@ -161,7 +161,7 @@ const oddEvenOscillations = observations.filter(
 if (maxDepth >= 4) {
   console.log(`- 1=3手・2=4手の偶奇振動: ${oddEvenOscillations.length} / ${observations.length}（${pct(oddEvenOscillations.length, observations.length)}）`);
 }
-console.log('- 注: 生の評価値は `myWalls` など探索深度の偶奇で基準がずれる項を含むため、深さをまたいだ符号をそのまま勝敗予測として比較しない。');
+console.log('- 注: この実験時の生の評価値には、現在は廃止した `myWalls` による偶奇の基準ずれが含まれるため、深さをまたいだ符号をそのまま勝敗予測として比較しない。');
 
 const lastDepthChanges = observations.filter(
   (row) => row.choices[maxDepth - 2].move !== row.choices[maxDepth - 1].move,
