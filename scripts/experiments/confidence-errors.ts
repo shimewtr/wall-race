@@ -54,6 +54,32 @@ interface PositionRef {
   move: MoveRecord;
 }
 
+const replay = (record: GameRecord, moveIndex: number) => {
+  const history: GameState[] = [initialState()];
+  for (let i = 0; i < moveIndex; i++) {
+    const move = moveFromString(record.moves[i].move);
+    if (!move) throw new Error(`cannot parse move: ${record.moves[i].move}`);
+    history.push(applyMove(history.at(-1)!, move));
+  }
+  return history;
+};
+const keyCache = new Map<string, string>();
+const positionKey = (item: PositionRef) => {
+  const id = `${item.gameIndex}:${item.moveIndex}`;
+  const cached = keyCache.get(id);
+  if (cached) return cached;
+  const state = replay(records[item.gameIndex], item.moveIndex).at(-1)!;
+  const key = [
+    state.turn,
+    ...state.pawns.flatMap((pawn) => [pawn.x, pawn.y]),
+    ...state.wallsLeft,
+    ...state.hWalls,
+    ...state.vWalls,
+  ].join(',');
+  keyCache.set(id, key);
+  return key;
+};
+
 const phaseOf = (move: MoveRecord): Phase => move.ply < 12 ? 'opening' : Math.min(move.myDist, move.opDist) <= 4 ? 'endgame' : 'middle';
 const wallBandOf = (move: MoveRecord): WallBand => {
   const walls = move.myWalls + move.opWalls;
@@ -87,20 +113,29 @@ for (const item of all) {
   group.push(item);
   wrongByGame.set(item.gameIndex, group);
 }
-const errors = [...wrongByGame.values()]
+const errorCandidates = [...wrongByGame.values()]
   .map((items) => items.sort((a, b) => Math.abs(b.predicted - Number(b.won)) - Math.abs(a.predicted - Number(a.won)))[0])
-  .sort((a, b) => b.confidence - a.confidence)
-  .slice(0, limit);
+  .sort((a, b) => b.confidence - a.confidence);
+const seenErrorStates = new Set<string>();
+const errors: PositionRef[] = [];
+for (const item of errorCandidates) {
+  const key = positionKey(item);
+  if (seenErrorStates.has(key)) continue;
+  seenErrorStates.add(key);
+  errors.push(item);
+  if (errors.length >= limit) break;
+}
 
 // 同じフェーズ・壁量を優先し、不確実性・手数・自信度が近い正解局面を対照にする。
 const correct = all.filter((item) => item.confidence >= 0.8 && ((item.predicted >= 0.5) === item.won));
 const usedControls = new Set<string>();
+const usedControlStates = new Set<string>();
 const controls = errors.map((error) => {
   let best: PositionRef | null = null;
   let bestCost = Infinity;
   for (const item of correct) {
     const key = `${item.gameIndex}:${item.moveIndex}`;
-    if (usedControls.has(key) || item.gameIndex === error.gameIndex) continue;
+    if (usedControls.has(key) || usedControlStates.has(positionKey(item)) || item.gameIndex === error.gameIndex) continue;
     const cost =
       (item.phase === error.phase ? 0 : 20) +
       (item.walls === error.walls ? 0 : 10) +
@@ -114,18 +149,9 @@ const controls = errors.map((error) => {
   }
   if (!best) throw new Error('not enough matched controls');
   usedControls.add(`${best.gameIndex}:${best.moveIndex}`);
+  usedControlStates.add(positionKey(best));
   return best;
 });
-
-const replay = (record: GameRecord, moveIndex: number) => {
-  const history: GameState[] = [initialState()];
-  for (let i = 0; i < moveIndex; i++) {
-    const move = moveFromString(record.moves[i].move);
-    if (!move) throw new Error(`cannot parse move: ${record.moves[i].move}`);
-    history.push(applyMove(history.at(-1)!, move));
-  }
-  return history;
-};
 const transition = (a: Move, b: Move) => {
   if (a.type !== b.type) return `${a.type}-to-${b.type}`;
   if (a.type === 'wall' && b.type === 'wall' && a.o !== b.o) return 'wall-orientation';
@@ -223,7 +249,7 @@ const countBy = <T>(items: T[], value: (item: T) => string) => Object.fromEntrie
 );
 
 console.log(`# 第${champion.generation}世代の高信頼誤予測分析`);
-console.log(`自己対戦${games}局 / 高信頼誤予測のある対局${wrongByGame.size}局 / 分析${errorAnalysis.length}局面`);
+console.log(`自己対戦${games}局 / 高信頼誤予測のある対局${wrongByGame.size}局 / 重複除外後${errorCandidates.length}候補から分析${errorAnalysis.length}局面`);
 console.log(`3→4手の変更: 誤予測 ${errorAnalysis.filter((item) => item.depthChanged).length}/${errorAnalysis.length}（${pct(errorAnalysis.filter((item) => item.depthChanged).length, errorAnalysis.length)}）、対照 ${controlAnalysis.filter((item) => item.depthChanged).length}/${controlAnalysis.length}（${pct(controlAnalysis.filter((item) => item.depthChanged).length, controlAnalysis.length)}）`);
 console.log(`誤予測のフェーズ: ${JSON.stringify(countBy(errorAnalysis, (item) => item.phase))}`);
 console.log(`誤予測の壁量: ${JSON.stringify(countBy(errorAnalysis, (item) => item.walls))}`);
