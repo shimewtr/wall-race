@@ -1,7 +1,7 @@
 // 自己対戦の 1 局を実行する。Node のワーカーからも呼ばれるので DOM・fs に依存しない。
 
 import { type SearchOptions, type Weights, recentCells, search } from '../engine/ai';
-import { type GameState, type Player, applyMove, initialState, isOver } from '../engine/game';
+import { type GameState, type Player, applyMove, cloneState, initialState, isOver } from '../engine/game';
 
 export interface MatchConfig {
   // [先手の重み, 後手の重み]
@@ -12,6 +12,9 @@ export interface MatchConfig {
   // 序盤のこの手数だけは、評価の上位 OPENING_TOP 手からランダムに選ぶ（展開をばらけさせる）
   openingPlies: number;
   seed: number;
+  // 中間局面から始める実験用。末尾を開始局面とし、直前の状態は往復防止にも使う。
+  // 省略時は通常どおり初期局面から始める。
+  startHistory?: GameState[];
   // 先手・後手それぞれの追加の探索オプション（実験で探索方法を比べる用）
   options?: [Partial<SearchOptions>, Partial<SearchOptions>];
 }
@@ -46,8 +49,9 @@ export function rngFrom(seed: number): () => number {
 // 勝者（引き分けは null）
 export function playMatch(cfg: MatchConfig): Player | null {
   const rng = rngFrom(cfg.seed);
-  const history: GameState[] = [initialState()];
-  let s = history[0];
+  if (cfg.startHistory?.length === 0) throw new Error('startHistory must not be empty');
+  const history: GameState[] = cfg.startHistory?.map(cloneState) ?? [initialState()];
+  let s = history.at(-1)!;
   while (!isOver(s)) {
     const { move } = search(s, {
       ...cfg.options?.[s.turn],
