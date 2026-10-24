@@ -28,6 +28,7 @@ const { values: args } = parseArgs({
     context: { type: 'string', default: '4' },
     'min-count': { type: 'string', default: '5' },
     examples: { type: 'string', default: '10' },
+    seed: { type: 'string', default: '91000000' },
   },
 });
 
@@ -40,6 +41,7 @@ const sampleEvery = Number(args['sample-every']);
 const context = Number(args.context);
 const minCount = Number(args['min-count']);
 const maxExamples = Number(args.examples);
+const seed = Number(args.seed);
 
 interface RecordedGame {
   states: GameState[];
@@ -86,7 +88,7 @@ function moveToken(state: GameState, move: Move, detailed: boolean): string {
 
 const recorded: RecordedGame[] = [];
 for (let game = 0; game < games; game++) {
-  const rng = rngFrom(91_000_000 + game);
+  const rng = rngFrom(seed + game);
   const states: GameState[] = [initialState()];
   const moves: Move[] = [];
   let state = states[0];
@@ -186,6 +188,7 @@ const pct = (count: number, total: number) => total === 0 ? '-' : `${(100 * coun
 console.log(`# 第 ${champion.generation} 世代の手順モチーフ分析`);
 console.log();
 console.log(`収集: ${recorded.length}局から${observations.length}局面（${sampleEvery}手間隔）`);
+console.log(`シード: ${seed}`);
 console.log(`3手→4手の最善手変更: ${changed.length}/${observations.length}（${pct(changed.length, observations.length)}）`);
 console.log('記号: P=駒、H/V=横/縦壁、+=有利な距離変化、0=即時距離差なし、-=不利、C=同方向の壁へ連結');
 
