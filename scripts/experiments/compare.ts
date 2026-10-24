@@ -20,6 +20,7 @@ const { values: args } = parseArgs({
     wb: { type: 'string', default: 'champion' },
     depth: { type: 'string', default: '3' },
     pairs: { type: 'string', default: '100' },
+    seed: { type: 'string', default: '7000000' },
   },
 });
 
@@ -40,13 +41,14 @@ function weights(spec: string): Weights {
 
 const depth = Number(args.depth);
 const pairs = Number(args.pairs);
+const seed = Number(args.seed);
 const optA: Partial<SearchOptions> = JSON.parse(args.a!);
 const optB: Partial<SearchOptions> = JSON.parse(args.b!);
 const wA = weights(args.wa!);
 const wB = weights(args.wb!);
 console.log(`A: weights=${args.wa} options=${args.a}`);
 console.log(`B: weights=${args.wb} options=${args.b}`);
-console.log(`depth=${depth} pairs=${pairs}\n`);
+console.log(`depth=${depth} pairs=${pairs} seed=${seed}\n`);
 
 // 勝率（全コアで並列）
 const pool = new PairPool();
@@ -55,7 +57,7 @@ const scores = await pool.runAll(
   Array.from({ length: pairs }, (_, i) => ({
     a: wA,
     b: wB,
-    opts: { depth, margin: 1, openingPlies: OPENING_PLIES, seed: 7_000_000 + i, options: [optA, optB] as [typeof optA, typeof optB] },
+    opts: { depth, margin: 1, openingPlies: OPENING_PLIES, seed: seed + i, options: [optA, optB] as [typeof optA, typeof optB] },
   })),
 );
 await pool.close();
