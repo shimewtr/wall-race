@@ -13,6 +13,7 @@ AI の学習を別のセッションでも同じ方針で続けるための手�
 | `training/champions/gen-NNNN.json` | 各世代の保存版 | 昇格時に Train が自動追加 |
 | `training/calibration.json` | 評価値を勝率へ換算する式 | 昇格時に Train が自動更新 |
 | `docs/roadmap.md` | 現状、確定した実験結果、次にやること | 作業の区切りごと |
+| `docs/analysis.md` | 新しい戦術・特徴量・学習方法を探す分析カタログ | 分析手法や優先順位を追加・変更したとき |
 | `docs/training.md` | 学習方法、運用手順、再開方法 | 学習方式・判定条件・運用が変わったとき |
 | `README.md` | 利用者にも関係する仕組みと使い方 | Webの強さや主要な仕組みが変わったとき |
 | `docs/guide.md` | 人間向けの戦術 | `guide.ts --opponents league` で採用を決めたとき |
