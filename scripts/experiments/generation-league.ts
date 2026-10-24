@@ -13,6 +13,7 @@ const { values: args } = parseArgs({
     pairs: { type: 'string', default: '50' },
     depth: { type: 'string', default: '3' },
     seed: { type: 'string', default: '99000000' },
+    generations: { type: 'string' },
   },
 });
 
@@ -35,13 +36,20 @@ if (!Number.isInteger(pairs) || pairs <= 0) throw new Error('--pairs must be a p
 if (!Number.isInteger(depth) || depth <= 0) throw new Error('--depth must be a positive integer');
 
 const championsDir = join(import.meta.dirname, '..', '..', 'training', 'champions');
-const generations: Generation[] = readdirSync(championsDir)
+const allGenerations: Generation[] = readdirSync(championsDir)
   .filter((name) => /^gen-\d+\.json$/.test(name))
   .map((name) => JSON.parse(readFileSync(join(championsDir, name), 'utf8')) as Generation)
   .map((entry) => ({ generation: entry.generation, weights: withDefaults(entry.weights) }))
   .sort((x, y) => x.generation - y.generation);
+const selected = args.generations
+  ? new Set(args.generations.split(',').map((value) => Number(value.trim())))
+  : null;
+const generations = selected
+  ? allGenerations.filter(({ generation }) => selected.has(generation))
+  : allGenerations;
 
 if (generations.length < 3) throw new Error('at least three champion generations are required');
+if (selected && generations.length !== selected.size) throw new Error('--generations contains an unknown or duplicate generation');
 
 const matchups = generations.flatMap((a, i) => generations.slice(i + 1).map((b) => ({ a, b })));
 console.log(`# 世代リーグ（${generations.length}世代・${matchups.length}組）`);
