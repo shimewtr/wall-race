@@ -13,6 +13,7 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   promote:
@@ -39,3 +40,10 @@ jobs:
           git commit -m "train: 第 ${generation} 世代に昇格（actions-promote, 勝率 ${score}%）" -- training
           git push origin HEAD:main
       - run: npm run status
+      - name: Resume training
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh variable set TRAIN_CHAIN --repo "$GITHUB_REPOSITORY" --body on
+          gh workflow run Train --repo "$GITHUB_REPOSITORY" --ref main
