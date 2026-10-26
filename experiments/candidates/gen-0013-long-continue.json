@@ -1,0 +1,27 @@
+{
+  "expectedChampionGeneration": 12,
+  "source": "restart-training continue seed 125000000; runs 40340929140 and 40412871158",
+  "evidence": {
+    "firstGames": 400,
+    "firstVsChampion": 0.5425,
+    "confirmationGames": 1200,
+    "confirmationVsChampionRounded": 0.523,
+    "combinedVsChampion": 0.528,
+    "vsInitial": 0.8375,
+    "vsLeague": 0.6975
+  },
+  "weights": {
+    "pathDiff": 10,
+    "rowDiff": -1.1798671069182174,
+    "wallDiff": 20.85742358552179,
+    "urgency": 674.9435374441015,
+    "wallsWhenClose": 57.05185637216724,
+    "center": -1.1020687541676846,
+    "adjacent": 4.097211808964563,
+    "lockedRace": 27.336733140388002,
+    "wallThreat": 2.9875204462343468,
+    "netWallThreat": 5.893181207040735,
+    "wallChain": 2.3445355743773026,
+    "routeDiversity": -0.9945618812521193
+  }
+}
