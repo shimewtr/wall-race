@@ -15,6 +15,7 @@ const { values: args } = parseArgs({
     pairs: { type: 'string', default: '32' },
     seeds: { type: 'string', default: '3' },
     'eval-games': { type: 'string', default: '200' },
+    strategies: { type: 'string', default: 'continue,reheat,restart' },
     seed: { type: 'string', default: '103000000' },
   },
 });
@@ -73,11 +74,16 @@ interface Strategy {
   start: Weights;
   stepIteration: number;
 }
-const strategies: Strategy[] = [
+const allStrategies: Strategy[] = [
   { name: 'continue', start: current, stepIteration: stateFile.stepIteration ?? 0 },
   { name: 'reheat', start: current, stepIteration: 0 },
   { name: 'restart', start: champion, stepIteration: 0 },
 ];
+const requested = new Set(args.strategies.split(','));
+const strategies = allStrategies.filter((strategy) => requested.has(strategy.name));
+if (strategies.length !== requested.size || strategies.length === 0) {
+  throw new Error('strategies は continue,reheat,restart からカンマ区切りで指定してください');
+}
 
 async function train(pool: PairPool, strategy: Strategy, replicate: number): Promise<Weights> {
   const theta = { ...strategy.start };
@@ -173,13 +179,13 @@ const summary = Object.fromEntries(strategies.map(({ name }) => {
     movementFromChampion: average(selected.map((row) => row.movementFromChampion)),
     championRange: [Math.min(...selected.map((row) => row.champion)), Math.max(...selected.map((row) => row.champion))],
   }];
-})) as Record<StrategyName, {
+})) as Partial<Record<StrategyName, {
   champion: number;
   initial: number;
   league: number;
   movementFromChampion: number;
   championRange: [number, number];
-}>;
+}>>;
 
 console.log(`# 第${championFile.generation}世代の停滞リスタート予備実験`);
 console.log(`各方式 ${seedCount} seed × ${iterations}反復 × ${pairsPerIteration}組、評価は各候補・各指標${evalGames}局`);
@@ -188,6 +194,7 @@ console.log('\n| 方式 | 対チャンピオン | seed範囲 | 対初期 | 歴�
 console.log('| --- | ---: | ---: | ---: | ---: | ---: |');
 for (const { name } of strategies) {
   const item = summary[name];
+  if (!item) continue;
   console.log(`| ${name} | ${percent(item.champion)} | ${percent(item.championRange[0])}〜${percent(item.championRange[1])} | ${percent(item.initial)} | ${percent(item.league)} | ${item.movementFromChampion.toFixed(3)} |`);
 }
 console.log('\nseed別:');
