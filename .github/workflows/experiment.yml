@@ -10,9 +10,13 @@ on:
       args:
         description: スクリプトに渡す引数
         default: ''
+      resume_run:
+        description: 再開元のExperiment run ID（任意）
+        default: ''
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   run:
@@ -27,6 +31,14 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      - name: Restore checkpoint
+        if: inputs.resume_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.resume_run }}
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "invalid run id"; exit 1; }
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name experiment-result
       - name: Run
         env:
           SCRIPT: ${{ inputs.script }}
@@ -45,3 +57,4 @@ jobs:
           path: |
             result.txt
             experiment-output.json
+            experiment-progress.jsonl

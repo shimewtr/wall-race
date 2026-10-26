@@ -2,7 +2,8 @@
 // 同じ計算量と乱数系列で比較する。training/ は変更しない。
 // 重い自己対戦を含むため GitHub Actions の Experiment で実行する。
 
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { DEFAULT_WEIGHTS, FEATURE_NAMES, type Feature, type Weights, withDefaults } from '../../src/engine/ai';
@@ -17,6 +18,8 @@ const { values: args } = parseArgs({
     'eval-games': { type: 'string', default: '200' },
     strategies: { type: 'string', default: 'continue,reheat,restart' },
     seed: { type: 'string', default: '103000000' },
+    'progress-file': { type: 'string', default: 'experiment-progress.jsonl' },
+    'resume-file': { type: 'string' },
   },
 });
 
@@ -25,6 +28,8 @@ const pairsPerIteration = Number(args.pairs);
 const seedCount = Number(args.seeds);
 const evalGames = Number(args['eval-games']);
 const baseSeed = Number(args.seed);
+const progressFile = args['progress-file'];
+const resumeFile = args['resume-file'];
 if (evalGames % 2 !== 0) throw new Error('eval-games must be even');
 
 const root = join(import.meta.dirname, '..', '..');
@@ -151,17 +156,98 @@ interface ResultRow {
   movementFromChampion: number;
   weights: Weights;
 }
-const pool = new PairPool();
+interface ProgressSource {
+  iterations: number;
+  pairsPerIteration: number;
+  seedCount: number;
+  evalGames: number;
+  baseSeed: number;
+  currentStepIteration: number;
+  strategies: StrategyName[];
+  championHash: string;
+  currentHash: string;
+}
+interface ProgressMeta {
+  type: 'meta';
+  version: 1;
+  generation: number;
+  source: ProgressSource;
+}
+interface ProgressRow {
+  type: 'row';
+  row: ResultRow;
+}
+
+const weightsHash = (weights: Weights) => createHash('sha256')
+  .update(JSON.stringify(FEATURE_NAMES.map((feature) => weights[feature])))
+  .digest('hex')
+  .slice(0, 16);
+const progressMeta: ProgressMeta = {
+  type: 'meta',
+  version: 1,
+  generation: championFile.generation,
+  source: {
+    iterations,
+    pairsPerIteration,
+    seedCount,
+    evalGames,
+    baseSeed,
+    currentStepIteration: stateFile.stepIteration ?? 0,
+    strategies: strategies.map(({ name }) => name),
+    championHash: weightsHash(champion),
+    currentHash: weightsHash(current),
+  },
+};
+
 const rows: ResultRow[] = [];
+if (resumeFile) {
+  if (!existsSync(resumeFile)) throw new Error(`resume-file が見つかりません: ${resumeFile}`);
+  const records = readFileSync(resumeFile, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as ProgressMeta | ProgressRow);
+  const savedMeta = records.find((record): record is ProgressMeta => record.type === 'meta');
+  if (!savedMeta || JSON.stringify(savedMeta) !== JSON.stringify(progressMeta)) {
+    throw new Error('再開元と現在の世代・重み・実験条件が一致しません');
+  }
+  for (const record of records) {
+    if (record.type !== 'row') continue;
+    if (!rows.some((row) => row.replicate === record.row.replicate && row.strategy === record.row.strategy)) {
+      rows.push(record.row);
+    }
+  }
+}
+
+writeFileSync(progressFile, `${JSON.stringify(progressMeta)}\n${rows.map((row) => JSON.stringify({ type: 'row', row } satisfies ProgressRow)).join('\n')}${rows.length ? '\n' : ''}`);
+const savePartial = () => writeFileSync('experiment-output.json', `${JSON.stringify({
+  complete: false,
+  generation: championFile.generation,
+  source: progressMeta.source,
+  rows,
+}, null, 2)}\n`);
+savePartial();
+
+const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
+console.log(`# 第${championFile.generation}世代の停滞リスタート実験`);
+console.log(`各方式 ${seedCount} seed × ${iterations}反復 × ${pairsPerIteration}組、評価は各候補・各指標${evalGames}局`);
+console.log(`現在の stepIteration=${stateFile.stepIteration ?? 0}、学習率=${learningRate(stateFile.stepIteration ?? 0).toFixed(4)}、再加熱後=${learningRate(0).toFixed(4)}`);
+if (rows.length) console.log(`チェックポイントから${rows.length}件を復元しました`);
+
+const pool = new PairPool();
 try {
   for (let replicate = 0; replicate < seedCount; replicate++) {
     for (const strategy of strategies) {
+      if (rows.some((row) => row.replicate === replicate && row.strategy === strategy.name)) continue;
       const weights = await train(pool, strategy, replicate);
       const championScore = await compare(pool, weights, champion, replicate, 100_000);
       const initialScore = await compare(pool, weights, initial, replicate, 200_000);
       const leagueScore = await compare(pool, weights, 'league', replicate, 300_000);
       const movementFromChampion = Math.sqrt(sum(tuned.map((feature) => (weights[feature] - champion[feature]) ** 2)));
-      rows.push({ strategy: strategy.name, replicate, champion: championScore, initial: initialScore, league: leagueScore, movementFromChampion, weights });
+      const row = { strategy: strategy.name, replicate, champion: championScore, initial: initialScore, league: leagueScore, movementFromChampion, weights };
+      rows.push(row);
+      appendFileSync(progressFile, `${JSON.stringify({ type: 'row', row } satisfies ProgressRow)}\n`);
+      savePartial();
+      console.log(`完了 ${strategy.name} #${replicate + 1}: champion ${percent(championScore)} / initial ${percent(initialScore)} / league ${percent(leagueScore)}`);
     }
   }
 } finally {
@@ -169,7 +255,6 @@ try {
 }
 
 const average = (values: number[]) => sum(values) / values.length;
-const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
 const summary = Object.fromEntries(strategies.map(({ name }) => {
   const selected = rows.filter((row) => row.strategy === name);
   return [name, {
@@ -187,9 +272,6 @@ const summary = Object.fromEntries(strategies.map(({ name }) => {
   championRange: [number, number];
 }>>;
 
-console.log(`# 第${championFile.generation}世代の停滞リスタート予備実験`);
-console.log(`各方式 ${seedCount} seed × ${iterations}反復 × ${pairsPerIteration}組、評価は各候補・各指標${evalGames}局`);
-console.log(`現在の stepIteration=${stateFile.stepIteration ?? 0}、学習率=${learningRate(stateFile.stepIteration ?? 0).toFixed(4)}、再加熱後=${learningRate(0).toFixed(4)}`);
 console.log('\n| 方式 | 対チャンピオン | seed範囲 | 対初期 | 歴代混合 | チャンピオンからの移動量 |');
 console.log('| --- | ---: | ---: | ---: | ---: | ---: |');
 for (const { name } of strategies) {
@@ -203,8 +285,9 @@ for (const row of rows) {
 }
 console.log('\n判定: 3指標でcontinueを悪化させず、複数seedで方向が一致する方式だけを400局以上の再確認へ進める。');
 writeFileSync('experiment-output.json', `${JSON.stringify({
+  complete: true,
   generation: championFile.generation,
-  source: { iterations, pairsPerIteration, seedCount, evalGames, baseSeed, currentStepIteration: stateFile.stepIteration ?? 0 },
+  source: progressMeta.source,
   summary,
   rows,
 }, null, 2)}\n`);

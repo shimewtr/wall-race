@@ -128,6 +128,8 @@ gh workflow run Train -f minutes=45
 4. push後、Trainを複数サイクル回す
 5. 同じ判定回数で変更前後を比較し、roadmapへ結果を書く
 
+120分に近づく長時間実験は、完了単位ごとに `experiment-progress.jsonl` と `experiment-output.json` を更新する。Experimentはキャンセル・タイムアウト時もこれらをartifactへ保存する。対応スクリプトを再開するときは、同じコミット・同じ引数に `--resume-file experiment-progress.jsonl` を加え、workflowの `resume_run`へ再開元run IDを渡す。世代・開始重み・実験条件が一致しない場合は安全のため再開を拒否する。
+
 ### 新しいAI特徴量の場合
 
 1. 棋譜・`analyze.ts`・`discover.ts` から仮説を作る
