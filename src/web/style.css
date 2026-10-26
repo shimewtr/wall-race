@@ -179,6 +179,14 @@ body {
   background: var(--wall-preview);
 }
 
+.wall.preview.owner-0 {
+  background: color-mix(in srgb, color-mix(in srgb, var(--wall) 35%, var(--p0)) 45%, transparent);
+}
+
+.wall.preview.owner-1 {
+  background: color-mix(in srgb, color-mix(in srgb, var(--wall) 50%, var(--p1)) 45%, transparent);
+}
+
 .wall.preview.invalid {
   background: var(--wall-invalid);
 }

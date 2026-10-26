@@ -203,7 +203,7 @@ function showPreview(x: number, y: number, o: Orientation) {
   hidePreview();
   const s = current();
   const ok = canHumanAct() && isLegal(s, { type: 'wall', x, y, o });
-  previewEl = wallEl(x, y, o, ok ? 'preview' : 'preview invalid');
+  previewEl = wallEl(x, y, o, `preview owner-${s.turn}${ok ? '' : ' invalid'}`);
   boardEl.appendChild(previewEl);
 }
 
