@@ -6,7 +6,7 @@ import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } 
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { DEFAULT_WEIGHTS, FEATURE_NAMES, type Feature, type Weights, withDefaults } from '../../src/engine/ai';
+import { DEFAULT_WEIGHTS, FEATURE_NAMES, type Feature, type SearchOptions, type Weights, withDefaults } from '../../src/engine/ai';
 import { OPENING_PLIES, rngFrom } from '../../src/train/match';
 import { PairPool, type PairJob } from '../lib/pool';
 
@@ -73,21 +73,28 @@ const perturbMultiplier = 0.5;
 const learningRate = (step: number) => 0.25 / (1 + step / 5000) ** 0.6;
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
 
-type StrategyName = 'continue' | 'reheat' | 'restart';
+type StrategyName = 'continue' | 'reheat' | 'restart' | 'gated-teacher';
 interface Strategy {
   name: StrategyName;
   start: Weights;
   stepIteration: number;
+  opponentOptions?: Partial<SearchOptions>;
 }
 const allStrategies: Strategy[] = [
   { name: 'continue', start: current, stepIteration: stateFile.stepIteration ?? 0 },
   { name: 'reheat', start: current, stepIteration: 0 },
   { name: 'restart', start: champion, stepIteration: 0 },
+  {
+    name: 'gated-teacher',
+    start: current,
+    stepIteration: stateFile.stepIteration ?? 0,
+    opponentOptions: { wallGateDepth: 4, wallGateAfterPly: OPENING_PLIES },
+  },
 ];
 const requested = new Set(args.strategies.split(','));
 const strategies = allStrategies.filter((strategy) => requested.has(strategy.name));
 if (strategies.length !== requested.size || strategies.length === 0) {
-  throw new Error('strategies は continue,reheat,restart からカンマ区切りで指定してください');
+  throw new Error('strategies は continue,reheat,restart,gated-teacher からカンマ区切りで指定してください');
 }
 
 async function train(pool: PairPool, strategy: Strategy, replicate: number): Promise<Weights> {
@@ -111,6 +118,9 @@ async function train(pool: PairPool, strategy: Strategy, replicate: number): Pro
         margin: 1,
         openingPlies: OPENING_PLIES,
         seed: seed + 2_000_000 + iteration * pairsPerIteration + index,
+        options: strategy.opponentOptions
+          ? ([{}, strategy.opponentOptions] as [Partial<SearchOptions>, Partial<SearchOptions>])
+          : undefined,
       },
     }));
     const [plusScores, minusScores] = await Promise.all([plus, minus].map((weights) =>
