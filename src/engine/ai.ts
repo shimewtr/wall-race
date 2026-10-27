@@ -684,12 +684,12 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
         const near = scored.filter((x) => x.v >= bestScore - margin);
         bestMove = near[Math.floor(rng() * near.length)].c.m;
       }
-      const rankedScores = scored.map((x) => x.v).sort((a, b) => b - a);
-      const rootGap = rankedScores.length > 1 ? rankedScores[0] - rankedScores[1] : Infinity;
+      // 次の深さの手順付けにもこの順序を使うため、分析用の評価差も同じsortから得る。
+      scored.sort((a, b) => b.v - a.v);
+      const rootGap = scored.length > 1 ? scored[0].v - scored[1].v : Infinity;
       result = { move: bestMove, score: bestScore, rootGap, depth, nodes };
       iterations.push(result);
       // 次の深さでは良かった手から読む
-      scored.sort((a, b) => b.v - a.v);
       rootMoves.splice(0, rootMoves.length, ...scored.map((x) => x.c));
       if (Math.abs(bestScore) > WIN / 2) break;
     } catch (e) {
