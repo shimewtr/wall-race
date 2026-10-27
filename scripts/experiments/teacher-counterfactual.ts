@@ -15,6 +15,7 @@ import {
   applyMove,
   initialState,
   isOver,
+  moveFromString,
   moveToString,
   shortestDistance,
 } from '../../src/engine/game';
@@ -198,6 +199,21 @@ console.log(`収集: ${new Set(samples.map((sample) => sample.game)).size}局・
 console.log(`終局追跡: 4手側が改善${improved.length} / 同じ${same.length} / 悪化${worsened.length}（追跡${rolloutDepth}手読み）`);
 group('改善', improved);
 group('悪化', worsened);
+group('同じ', same);
+
+const moveTypes = (moves: string[]) => moves.slice(0, 4).map((text) => {
+  const move = moveFromString(text);
+  return move?.type === 'wall' ? 'W' : move?.type === 'pawn' ? 'P' : '?';
+}).join('');
+console.log('\n## 壁→前進の直後4手');
+for (const [name, candidates] of [['改善', improved], ['同じ', same], ['悪化', worsened]] as const) {
+  const patterns = new Map<string, number>();
+  for (const index of candidates.filter((value) => kind(value) === 'wall→pawn')) {
+    const key = `3手側 ${moveTypes(outcomes[index].guide.moves)} / 4手側 ${moveTypes(outcomes[index].expert.moves)}`;
+    patterns.set(key, (patterns.get(key) ?? 0) + 1);
+  }
+  console.log(`- ${name}: ${[...patterns].sort((a, b) => b[1] - a[1]).map(([key, count]) => `${key} ${count}`).join('、') || 'なし'}`);
+}
 console.log('\n## 改善例と悪化例の平均差');
 for (const row of contrasts) console.log(`- ${row.field}: 改善${row.improved.toFixed(2)} / 悪化${row.worsened.toFixed(2)} / 差${(row.improved - row.worsened).toFixed(2)}`);
 console.log('\n## 代表例');
@@ -218,4 +234,10 @@ writeFileSync('experiment-output.json', `${JSON.stringify({
     improved: improved.slice(0, 8).map((index) => ({ change: changes[index].disagreement, outcome: outcomes[index] })),
     worsened: worsened.slice(0, 8).map((index) => ({ change: changes[index].disagreement, outcome: outcomes[index] })),
   },
+  rows: indexes.map((index) => ({
+    delta: deltaAt(index),
+    values: changes[index].values,
+    change: changes[index].disagreement,
+    outcome: outcomes[index],
+  })),
 }, null, 2)}\n`);
