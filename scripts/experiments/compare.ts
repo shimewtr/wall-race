@@ -82,7 +82,7 @@ const time = (opts: Partial<SearchOptions>, w: Weights) => {
   const ms: number[] = [];
   for (const s of sample) {
     const t = performance.now();
-    search(s, { ...opts, maxDepth: depth, weights: w });
+    search(s, { maxDepth: depth, ...opts, weights: w });
     ms.push(performance.now() - t);
   }
   ms.sort((x, y) => x - y);
