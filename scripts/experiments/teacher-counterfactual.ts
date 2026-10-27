@@ -104,6 +104,7 @@ const stateKey = (state: GameState) => {
 interface Change {
   sample: Sample;
   disagreement: Disagreement;
+  shallowRootGap: number;
   values: Record<Feature, number>;
   moveDeltas: Record<Feature | 'raceLeadAfter' | 'wallDiffAfter', number>;
 }
@@ -148,6 +149,7 @@ for (const sample of samples) {
   };
   changes.push({
     sample,
+    shallowRootGap: depth3.rootGap ?? Infinity,
     values: evaluateFeatures(sample.state),
     moveDeltas,
     disagreement: {
@@ -210,6 +212,11 @@ const moveContrasts = moveFields.map((field) => ({
   improved: average(improved.map((index) => changes[index].moveDeltas[field])),
   worsened: average(worsened.map((index) => changes[index].moveDeltas[field])),
 })).sort((a, b) => Math.abs(b.improved - b.worsened) - Math.abs(a.improved - a.worsened));
+const gapGroups = [
+  ['改善', improved],
+  ['同じ', same],
+  ['悪化', worsened],
+] as const;
 
 const kind = (index: number) => `${changes[index].disagreement.guideType}→${changes[index].disagreement.expertType}`;
 const group = (name: string, candidates: number[]) => {
@@ -245,6 +252,12 @@ console.log('\n## 改善例と悪化例の平均差');
 for (const row of contrasts) console.log(`- ${row.field}: 改善${row.improved.toFixed(2)} / 悪化${row.worsened.toFixed(2)} / 差${(row.improved - row.worsened).toFixed(2)}`);
 console.log('\n## 4手候補−3手候補の手後特徴差');
 for (const row of moveContrasts) console.log(`- ${row.field}: 改善${row.improved.toFixed(2)} / 悪化${row.worsened.toFixed(2)} / 差${(row.improved - row.worsened).toFixed(2)}`);
+console.log('\n## 3手読みの1位・2位評価差');
+for (const [name, candidates] of gapGroups) {
+  const gaps = candidates.map((index) => changes[index].shallowRootGap).sort((a, b) => a - b);
+  const median = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
+  console.log(`- ${name}: 平均${average(gaps).toFixed(2)} / 中央${median.toFixed(2)} / 5点以内${gaps.filter((gap) => gap <= 5).length}/${gaps.length} / 10点以内${gaps.filter((gap) => gap <= 10).length}/${gaps.length}`);
+}
 console.log('\n## 代表例');
 for (const [name, candidates] of [['改善', improved], ['悪化', worsened]] as const) {
   for (const index of candidates.slice(0, 8)) {
@@ -266,6 +279,7 @@ writeFileSync('experiment-output.json', `${JSON.stringify({
   },
   rows: indexes.map((index) => ({
     delta: deltaAt(index),
+    shallowRootGap: changes[index].shallowRootGap,
     values: changes[index].values,
     moveDeltas: changes[index].moveDeltas,
     change: changes[index].disagreement,

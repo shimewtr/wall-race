@@ -106,6 +106,8 @@ export function recentCells(history: GameState[], player: Player, n = 4): Pos[] 
 export interface SearchResult {
   move: Move;
   score: number;
+  // 最終反復での根の1位と2位の評価差。適応深読みの分析用で、手の選択には使わない。
+  rootGap?: number;
   depth: number;
   nodes: number;
 }
@@ -675,7 +677,9 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
         const near = scored.filter((x) => x.v >= bestScore - margin);
         bestMove = near[Math.floor(rng() * near.length)].c.m;
       }
-      result = { move: bestMove, score: bestScore, depth, nodes };
+      const rankedScores = scored.map((x) => x.v).sort((a, b) => b - a);
+      const rootGap = rankedScores.length > 1 ? rankedScores[0] - rankedScores[1] : Infinity;
+      result = { move: bestMove, score: bestScore, rootGap, depth, nodes };
       // 次の深さでは良かった手から読む
       scored.sort((a, b) => b.v - a.v);
       rootMoves.splice(0, rootMoves.length, ...scored.map((x) => x.c));
