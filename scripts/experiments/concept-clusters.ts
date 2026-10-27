@@ -208,6 +208,21 @@ const summaries = activeClusters.map((cluster) => {
     .filter((item) => Math.abs(item.z) >= 0.35)
     .sort((a, b) => Math.abs(b.z) - Math.abs(a.z))
     .slice(0, 5);
+  const improvedIndexes = indexes.filter((index) => outcomeDelta(results[index]) > 0);
+  const worsenedIndexes = indexes.filter((index) => outcomeDelta(results[index]) < 0);
+  const outcomeSignals = improvedIndexes.length && worsenedIndexes.length
+    ? featureNames
+      .map((name) => ({
+        name,
+        z: (average(improvedIndexes.map((index) => raw[index][name]))
+          - average(worsenedIndexes.map((index) => raw[index][name]))) / deviations[name],
+      }))
+      .sort((a, b) => Math.abs(b.z) - Math.abs(a.z))
+      .slice(0, 5)
+    : [];
+  const nearestExamples = (candidates: number[]) => candidates
+    .sort((a, b) => distance(vectors[a], centers[cluster]) - distance(vectors[b], centers[cluster]))
+    .slice(0, 2);
   const kinds = new Map<string, number>();
   for (const index of indexes) {
     const row = results[index].disagreement;
@@ -223,6 +238,11 @@ const summaries = activeClusters.map((cluster) => {
     averageOutcome: average(outcomes),
     kinds: Object.fromEntries([...kinds].sort((a, b) => b[1] - a[1])),
     topSignals,
+    outcomeSignals,
+    examples: {
+      improved: nearestExamples(improvedIndexes),
+      worsened: nearestExamples(worsenedIndexes),
+    },
     rawMeans: Object.fromEntries(featureNames.map((name) => [name, average(indexes.map((index) => raw[index][name]))])),
     representative,
   };
@@ -241,10 +261,17 @@ for (const [rank, summary] of summaries.entries()) {
   console.log(`\n## C${rank + 1}: ${summary.size}局面・改善${summary.improved}/同じ${summary.unchanged}/悪化${summary.worsened}`);
   console.log(`- 不一致型: ${Object.entries(summary.kinds).map(([name, count]) => `${name} ${count}`).join('、')}`);
   console.log(`- 特徴: ${summary.topSignals.map(({ name, z }) => `${featureLabels[name]} ${z > 0 ? '高' : '低'}(${z.toFixed(1)}σ)`).join('、') || '全体平均に近い'}`);
+  if (summary.outcomeSignals.length) console.log(`- 改善−悪化: ${summary.outcomeSignals.map(({ name, z }) => `${featureLabels[name]} ${z > 0 ? '高' : '低'}(${z.toFixed(1)}σ)`).join('、')}`);
   console.log(`- 平均: ${summary.rawMeans.ply.toFixed(1)}手目、歩数リード${summary.rawMeans.raceLead.toFixed(2)}、壁差${summary.rawMeans.wallDiff.toFixed(2)}、即時差${summary.rawMeans.netGainDelta.toFixed(2)}、応手後歩数差${summary.rawMeans.replyRaceDelta.toFixed(2)}`);
   console.log(`- 代表: ${disagreement.position.ply}手目、${disagreement.guideMove}→${disagreement.expertMove}、regret ${disagreement.regret}、勝敗差 ${outcomeDelta(result) > 0 ? '改善' : outcomeDelta(result) < 0 ? '悪化' : '同じ'}`);
   console.log(`- 盤面: 駒 ${disagreement.position.pawns.join('/')}、横壁 [${disagreement.position.hWalls.join(' ')}]、縦壁 [${disagreement.position.vWalls.join(' ')}]`);
   console.log(`- 棋譜: ${disagreement.position.moves || '（初期局面）'}`);
+  for (const [outcome, indexes] of Object.entries(summary.examples)) {
+    for (const index of indexes) {
+      const example = results[index].disagreement;
+      console.log(`- ${outcome === 'improved' ? '改善例' : '悪化例'}: ${example.position.ply}手目 ${example.guideMove}→${example.expertMove}、駒 ${example.position.pawns.join('/')}、棋譜 ${example.position.moves || '（初期局面）'}`);
+    }
+  }
 }
 
 console.log('\n## 読み方');
@@ -264,5 +291,9 @@ writeFileSync('experiment-output.json', `${JSON.stringify({
   summaries: summaries.map((summary) => ({
     ...summary,
     representative: results[summary.representative],
+    examples: {
+      improved: summary.examples.improved.map((index) => results[index]),
+      worsened: summary.examples.worsened.map((index) => results[index]),
+    },
   })),
 }, null, 2)}\n`);
