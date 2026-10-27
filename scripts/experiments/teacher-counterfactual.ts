@@ -105,6 +105,8 @@ interface Change {
   sample: Sample;
   disagreement: Disagreement;
   shallowRootGap: number;
+  depth1MatchesDeep: boolean;
+  depth2MatchesDeep: boolean;
   values: Record<Feature, number>;
   moveDeltas: Record<Feature | 'raceLeadAfter' | 'wallDiffAfter', number>;
 }
@@ -114,6 +116,8 @@ for (const sample of samples) {
   const depth3 = search(sample.state, { maxDepth: 3, weights: champion.weights, repeatPenalty: 0 });
   const depth4 = search(sample.state, { maxDepth: 4, weights: champion.weights, repeatPenalty: 0 });
   if (sameMove(depth3.move, depth4.move)) continue;
+  const depth1 = search(sample.state, { maxDepth: 1, weights: champion.weights, repeatPenalty: 0 });
+  const depth2 = search(sample.state, { maxDepth: 2, weights: champion.weights, repeatPenalty: 0 });
   const key = stateKey(sample.state);
   if (seen.has(key)) continue;
   seen.add(key);
@@ -150,6 +154,8 @@ for (const sample of samples) {
   changes.push({
     sample,
     shallowRootGap: depth3.rootGap ?? Infinity,
+    depth1MatchesDeep: sameMove(depth1.move, depth4.move),
+    depth2MatchesDeep: sameMove(depth2.move, depth4.move),
     values: evaluateFeatures(sample.state),
     moveDeltas,
     disagreement: {
@@ -258,6 +264,10 @@ for (const [name, candidates] of gapGroups) {
   const median = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
   console.log(`- ${name}: 平均${average(gaps).toFixed(2)} / 中央${median.toFixed(2)} / 5点以内${gaps.filter((gap) => gap <= 5).length}/${gaps.length} / 10点以内${gaps.filter((gap) => gap <= 10).length}/${gaps.length}`);
 }
+console.log('\n## 浅い読みと4手読みの一致');
+for (const [name, candidates] of gapGroups) {
+  console.log(`- ${name}: 1=4 ${candidates.filter((index) => changes[index].depth1MatchesDeep).length}/${candidates.length} / 2=4 ${candidates.filter((index) => changes[index].depth2MatchesDeep).length}/${candidates.length}`);
+}
 console.log('\n## 代表例');
 for (const [name, candidates] of [['改善', improved], ['悪化', worsened]] as const) {
   for (const index of candidates.slice(0, 8)) {
@@ -280,6 +290,8 @@ writeFileSync('experiment-output.json', `${JSON.stringify({
   rows: indexes.map((index) => ({
     delta: deltaAt(index),
     shallowRootGap: changes[index].shallowRootGap,
+    depth1MatchesDeep: changes[index].depth1MatchesDeep,
+    depth2MatchesDeep: changes[index].depth2MatchesDeep,
     values: changes[index].values,
     moveDeltas: changes[index].moveDeltas,
     change: changes[index].disagreement,
