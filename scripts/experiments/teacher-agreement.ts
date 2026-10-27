@@ -14,6 +14,7 @@ const { values: args } = parseArgs({
     positions: { type: 'string', default: '600' },
     'sample-every': { type: 'string', default: '4' },
     fractions: { type: 'string', default: '0,0.25,0.5,0.75,1' },
+    reset: { type: 'string', default: '' },
     seed: { type: 'string', default: '106000000' },
     examples: { type: 'string', default: '12' },
   },
@@ -37,6 +38,10 @@ const seed = Number(args.seed);
 const maxExamples = Number(args.examples);
 const fractions = args.fractions.split(',').map(Number);
 if (fractions.some((fraction) => !Number.isFinite(fraction))) throw new Error('fractions must be comma-separated numbers');
+const resetFeatures = args.reset.split(',').filter(Boolean);
+if (resetFeatures.some((feature) => !FEATURE_NAMES.includes(feature as keyof Weights))) {
+  throw new Error(`reset must use feature names: ${FEATURE_NAMES.join(',')}`);
+}
 
 const interpolate = (fraction: number): Weights => Object.fromEntries(
   FEATURE_NAMES.map((feature) => [feature, champion[feature] + fraction * (current[feature] - champion[feature])]),
@@ -151,6 +156,31 @@ const featureAttribution = FEATURE_NAMES
   })
   .sort((a, b) => a.netFixes - b.netFixes || b.changes - a.changes);
 
+const repairWeights = { ...current };
+for (const feature of resetFeatures) repairWeights[feature as keyof Weights] = champion[feature as keyof Weights];
+let repairResult: null | {
+  resetFeatures: string[];
+  teacherMatches: number;
+  changes: number;
+  criticalFixes: number;
+  stableBreaks: number;
+} = null;
+if (resetFeatures.length) {
+  let teacherMatches = 0;
+  let changes = 0;
+  let criticalFixes = 0;
+  let stableBreaks = 0;
+  for (let index = 0; index < observations.length; index++) {
+    const row = observations[index];
+    const move = moveToString(search(samples[index].state, { maxDepth: 3, weights: repairWeights, repeatPenalty: 0 }).move);
+    if (move === row.teacher4) teacherMatches++;
+    if (move !== row.champion3) changes++;
+    if (row.champion3 !== row.teacher4 && move === row.teacher4) criticalFixes++;
+    if (row.champion3 === row.teacher4 && move !== row.teacher4) stableBreaks++;
+  }
+  repairResult = { resetFeatures, teacherMatches, changes, criticalFixes, stableBreaks };
+}
+
 console.log(`# 第${championFile.generation}世代の4手読み教師一致分析`);
 console.log(`収集: ${new Set(observations.map((row) => row.game)).size}局から${observations.length}局面、seed=${seed}`);
 console.log(`3手と4手の判断差: ${critical.length}/${observations.length}（${pct(critical.length, observations.length)}）`);
@@ -166,6 +196,12 @@ console.log('| 特徴量 | チャンピオン→学習中 | 4手教師との一�
 console.log('| --- | ---: | ---: | ---: | ---: | ---: | ---: |');
 for (const row of featureAttribution) {
   console.log(`| ${row.feature} | ${row.champion.toFixed(3)}→${row.current.toFixed(3)} | ${row.teacherMatches}/${observations.length} | ${row.changes} | ${row.criticalFixes} | ${row.stableBreaks} | ${row.netFixes >= 0 ? '+' : ''}${row.netFixes} |`);
+}
+if (repairResult) {
+  console.log('\n## 修復候補');
+  console.log(`- 学習中重みから ${repairResult.resetFeatures.join(', ')} をチャンピオン値へ戻す`);
+  console.log(`- 4手教師との一致: ${repairResult.teacherMatches}/${observations.length}（${pct(repairResult.teacherMatches, observations.length)}）`);
+  console.log(`- 3手チャンピオンから変更: ${repairResult.changes}、判断差を修正: ${repairResult.criticalFixes}、安定局面を破壊: ${repairResult.stableBreaks}`);
 }
 
 console.log('\n## フェーズ別・学習中重みの教師一致');
@@ -199,5 +235,6 @@ writeFileSync('experiment-output.json', `${JSON.stringify({
   critical: critical.length,
   results,
   featureAttribution,
+  repairResult,
   fixedExamples: fixed.slice(0, maxExamples),
 }, null, 2)}\n`);
