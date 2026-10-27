@@ -68,6 +68,8 @@ export interface SearchOptions {
   wallGateDepth?: number;
   // wallGateDepth を有効にする最初の手数。序盤の展開ばらしを深読みしないために使う
   wallGateAfterPly?: number;
+  // 2手と4手が同じ手、3手だけ別の手になる偶奇反復では3手側を採る（実験用）
+  evenOscillationFallback?: boolean;
   timeMs?: number;
   weights?: Partial<Weights>;
   // 評価値に加えるランダムノイズの幅。弱い手も選ばれうるので、わざと手加減するレベル向け
@@ -111,6 +113,10 @@ export interface SearchResult {
   depth: number;
   nodes: number;
 }
+
+const sameMove = (a: Move, b: Move) =>
+  a.type === b.type && a.x === b.x && a.y === b.y &&
+  (a.type === 'pawn' || (b.type === 'wall' && a.o === b.o));
 
 // 勝ちを読み切ったときの評価値（実際は WIN − 勝つまでの手数）
 export const WIN = 100000;
@@ -643,6 +649,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
     m.type === 'pawn' && recent.some((p) => p.x === m.x && p.y === m.y) ? repeatPenalty : 0;
   if (rootMoves.length === 0) throw new Error('no legal moves');
   let result: SearchResult = { move: rootMoves[0].m, score: 0, depth: 0, nodes: 0 };
+  const iterations: SearchResult[] = [];
 
   for (let depth = 1; depth <= opts.maxDepth; depth++) {
     // 時間切れで途中で抜けると盤面が戻らないので、深さごとに作業用の複製を使う
@@ -680,6 +687,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
       const rankedScores = scored.map((x) => x.v).sort((a, b) => b - a);
       const rootGap = rankedScores.length > 1 ? rankedScores[0] - rankedScores[1] : Infinity;
       result = { move: bestMove, score: bestScore, rootGap, depth, nodes };
+      iterations.push(result);
       // 次の深さでは良かった手から読む
       scored.sort((a, b) => b.v - a.v);
       rootMoves.splice(0, rootMoves.length, ...scored.map((x) => x.c));
@@ -687,6 +695,14 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
     } catch (e) {
       if (e instanceof Timeout) break;
       throw e;
+    }
+  }
+  if (opts.evenOscillationFallback) {
+    const depth2 = iterations.find((row) => row.depth === 2);
+    const depth3 = iterations.find((row) => row.depth === 3);
+    const depth4 = iterations.find((row) => row.depth === 4);
+    if (depth2 && depth3 && depth4 && sameMove(depth2.move, depth4.move) && !sameMove(depth3.move, depth4.move)) {
+      result = { ...depth3, depth: depth4.depth, nodes };
     }
   }
   result.nodes = nodes;
