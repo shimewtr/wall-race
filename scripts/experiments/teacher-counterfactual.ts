@@ -105,6 +105,7 @@ interface Change {
   sample: Sample;
   disagreement: Disagreement;
   values: Record<Feature, number>;
+  moveDeltas: Record<Feature | 'raceLeadAfter' | 'wallDiffAfter', number>;
 }
 const changes: Change[] = [];
 const seen = new Set<string>();
@@ -117,6 +118,25 @@ for (const sample of samples) {
   seen.add(key);
   const me = sample.state.turn;
   const op = (1 - me) as Player;
+  const shallowAfter = applyMove(sample.state, depth3.move);
+  const deepAfter = applyMove(sample.state, depth4.move);
+  // applyMove後は相手手番なので、featuresの符号を反転すると元の手番側から見た値になる。
+  const shallowFeatures = evaluateFeatures(shallowAfter);
+  const deepFeatures = evaluateFeatures(deepAfter);
+  const moveDeltas = Object.fromEntries(Object.keys(shallowFeatures).map((feature) => [
+    feature,
+    shallowFeatures[feature as Feature] - deepFeatures[feature as Feature],
+  ])) as Change['moveDeltas'];
+  moveDeltas.raceLeadAfter = (
+    shortestDistance(deepAfter, op) - shortestDistance(deepAfter, me)
+  ) - (
+    shortestDistance(shallowAfter, op) - shortestDistance(shallowAfter, me)
+  );
+  moveDeltas.wallDiffAfter = (
+    deepAfter.wallsLeft[me] - deepAfter.wallsLeft[op]
+  ) - (
+    shallowAfter.wallsLeft[me] - shallowAfter.wallsLeft[op]
+  );
   const position: DiscoveryPosition = {
     ply: sample.state.ply,
     guidePlayer: me,
@@ -129,6 +149,7 @@ for (const sample of samples) {
   changes.push({
     sample,
     values: evaluateFeatures(sample.state),
+    moveDeltas,
     disagreement: {
       position,
       guideMove: moveToString(depth3.move),
@@ -183,6 +204,12 @@ const contrasts = fields.map((field) => ({
   improved: average(improved.map((index) => valueAt(index, field))),
   worsened: average(worsened.map((index) => valueAt(index, field))),
 })).sort((a, b) => Math.abs(b.improved - b.worsened) - Math.abs(a.improved - a.worsened));
+const moveFields = [...Object.keys(changes[0]?.moveDeltas ?? {})] as Array<keyof Change['moveDeltas']>;
+const moveContrasts = moveFields.map((field) => ({
+  field,
+  improved: average(improved.map((index) => changes[index].moveDeltas[field])),
+  worsened: average(worsened.map((index) => changes[index].moveDeltas[field])),
+})).sort((a, b) => Math.abs(b.improved - b.worsened) - Math.abs(a.improved - a.worsened));
 
 const kind = (index: number) => `${changes[index].disagreement.guideType}→${changes[index].disagreement.expertType}`;
 const group = (name: string, candidates: number[]) => {
@@ -216,6 +243,8 @@ for (const [name, candidates] of [['改善', improved], ['同じ', same], ['悪�
 }
 console.log('\n## 改善例と悪化例の平均差');
 for (const row of contrasts) console.log(`- ${row.field}: 改善${row.improved.toFixed(2)} / 悪化${row.worsened.toFixed(2)} / 差${(row.improved - row.worsened).toFixed(2)}`);
+console.log('\n## 4手候補−3手候補の手後特徴差');
+for (const row of moveContrasts) console.log(`- ${row.field}: 改善${row.improved.toFixed(2)} / 悪化${row.worsened.toFixed(2)} / 差${(row.improved - row.worsened).toFixed(2)}`);
 console.log('\n## 代表例');
 for (const [name, candidates] of [['改善', improved], ['悪化', worsened]] as const) {
   for (const index of candidates.slice(0, 8)) {
@@ -230,6 +259,7 @@ writeFileSync('experiment-output.json', `${JSON.stringify({
   source: { games, maxPositions, maxChanges, sampleEvery, rolloutDepth, seed },
   totals: { sampled: samples.length, changes: changes.length, improved: improved.length, same: same.length, worsened: worsened.length },
   contrasts,
+  moveContrasts,
   examples: {
     improved: improved.slice(0, 8).map((index) => ({ change: changes[index].disagreement, outcome: outcomes[index] })),
     worsened: worsened.slice(0, 8).map((index) => ({ change: changes[index].disagreement, outcome: outcomes[index] })),
@@ -237,6 +267,7 @@ writeFileSync('experiment-output.json', `${JSON.stringify({
   rows: indexes.map((index) => ({
     delta: deltaAt(index),
     values: changes[index].values,
+    moveDeltas: changes[index].moveDeltas,
     change: changes[index].disagreement,
     outcome: outcomes[index],
   })),
