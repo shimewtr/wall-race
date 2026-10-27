@@ -5,6 +5,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { transformState } from '../../src/analysis/symmetry';
 import { features as evaluateFeatures, recentCells, search, type Feature, type Weights } from '../../src/engine/ai';
 import {
   type GameState,
@@ -86,6 +87,18 @@ const wallNames = (state: GameState, orientation: 'h' | 'v') => {
 };
 const sameMove = (a: Move, b: Move) => moveToString(a) === moveToString(b);
 const phase = (ply: number) => ply < 20 ? '序盤' : ply < 40 ? '中盤' : '終盤';
+const stateKey = (state: GameState) => {
+  const encode = (value: GameState) => JSON.stringify([
+    value.pawns,
+    value.wallsLeft,
+    Array.from(value.hWalls),
+    Array.from(value.vWalls),
+    value.turn,
+  ]);
+  const normal = encode(state);
+  const mirrored = encode(transformState(state, 'left-right'));
+  return normal < mirrored ? normal : mirrored;
+};
 
 interface Change {
   sample: Sample;
@@ -93,10 +106,14 @@ interface Change {
   values: Record<Feature, number>;
 }
 const changes: Change[] = [];
+const seen = new Set<string>();
 for (const sample of samples) {
   const depth3 = search(sample.state, { maxDepth: 3, weights: champion.weights, repeatPenalty: 0 });
   const depth4 = search(sample.state, { maxDepth: 4, weights: champion.weights, repeatPenalty: 0 });
   if (sameMove(depth3.move, depth4.move)) continue;
+  const key = stateKey(sample.state);
+  if (seen.has(key)) continue;
+  seen.add(key);
   const me = sample.state.turn;
   const op = (1 - me) as Player;
   const position: DiscoveryPosition = {
