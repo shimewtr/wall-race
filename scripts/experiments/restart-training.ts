@@ -73,28 +73,32 @@ const perturbMultiplier = 0.5;
 const learningRate = (step: number) => 0.25 / (1 + step / 5000) ** 0.6;
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
 
-type StrategyName = 'continue' | 'reheat' | 'restart' | 'gated-teacher';
+type StrategyName = 'continue' | 'reheat' | 'restart' | 'gated-teacher' | 'depth4' | 'depth5';
 interface Strategy {
   name: StrategyName;
   start: Weights;
   stepIteration: number;
+  depth: number;
   opponentOptions?: Partial<SearchOptions>;
 }
 const allStrategies: Strategy[] = [
-  { name: 'continue', start: current, stepIteration: stateFile.stepIteration ?? 0 },
-  { name: 'reheat', start: current, stepIteration: 0 },
-  { name: 'restart', start: champion, stepIteration: 0 },
+  { name: 'continue', start: current, stepIteration: stateFile.stepIteration ?? 0, depth: 3 },
+  { name: 'reheat', start: current, stepIteration: 0, depth: 3 },
+  { name: 'restart', start: champion, stepIteration: 0, depth: 3 },
   {
     name: 'gated-teacher',
     start: current,
     stepIteration: stateFile.stepIteration ?? 0,
+    depth: 3,
     opponentOptions: { wallGateDepth: 4, wallGateAfterPly: OPENING_PLIES },
   },
+  { name: 'depth4', start: current, stepIteration: stateFile.stepIteration ?? 0, depth: 4 },
+  { name: 'depth5', start: current, stepIteration: stateFile.stepIteration ?? 0, depth: 5 },
 ];
 const requested = new Set(args.strategies.split(','));
 const strategies = allStrategies.filter((strategy) => requested.has(strategy.name));
 if (strategies.length !== requested.size || strategies.length === 0) {
-  throw new Error('strategies は continue,reheat,restart,gated-teacher からカンマ区切りで指定してください');
+  throw new Error('strategies は continue,reheat,restart,gated-teacher,depth4,depth5 からカンマ区切りで指定してください');
 }
 
 async function train(pool: PairPool, strategy: Strategy, replicate: number): Promise<Weights> {
@@ -114,7 +118,7 @@ async function train(pool: PairPool, strategy: Strategy, replicate: number): Pro
     const matches = Array.from({ length: pairsPerIteration }, (_, index) => ({
       opponent: matchRng() < 0.5 ? champion : league[Math.floor(matchRng() * league.length)],
       opts: {
-        depth: 3,
+        depth: strategy.depth,
         margin: 1,
         openingPlies: OPENING_PLIES,
         seed: seed + 2_000_000 + iteration * pairsPerIteration + index,
@@ -141,13 +145,14 @@ async function compare(
   opponent: Weights | 'league',
   replicate: number,
   offset: number,
+  depth: number,
 ): Promise<number> {
   const pairCount = evalGames / 2;
   const jobs: PairJob[] = Array.from({ length: pairCount }, (_, index) => ({
     a: candidate,
     b: opponent === 'league' ? league[index % league.length] : opponent,
     opts: {
-      depth: 3,
+      depth,
       margin: 1,
       openingPlies: OPENING_PLIES,
       seed: baseSeed + 50_000_000 + replicate * 1_000_000 + offset + index,
@@ -174,12 +179,13 @@ interface ProgressSource {
   baseSeed: number;
   currentStepIteration: number;
   strategies: StrategyName[];
+  strategyDepths: Record<StrategyName, number>;
   championHash: string;
   currentHash: string;
 }
 interface ProgressMeta {
   type: 'meta';
-  version: 1;
+  version: 2;
   generation: number;
   source: ProgressSource;
 }
@@ -194,7 +200,7 @@ const weightsHash = (weights: Weights) => createHash('sha256')
   .slice(0, 16);
 const progressMeta: ProgressMeta = {
   type: 'meta',
-  version: 1,
+  version: 2,
   generation: championFile.generation,
   source: {
     iterations,
@@ -204,6 +210,7 @@ const progressMeta: ProgressMeta = {
     baseSeed,
     currentStepIteration: stateFile.stepIteration ?? 0,
     strategies: strategies.map(({ name }) => name),
+    strategyDepths: Object.fromEntries(strategies.map(({ name, depth }) => [name, depth])) as Record<StrategyName, number>,
     championHash: weightsHash(champion),
     currentHash: weightsHash(current),
   },
@@ -239,7 +246,7 @@ savePartial();
 
 const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
 console.log(`# 第${championFile.generation}世代の停滞リスタート実験`);
-console.log(`各方式 ${seedCount} seed × ${iterations}反復 × ${pairsPerIteration}組、評価は各候補・各指標${evalGames}局`);
+console.log(`各方式 ${seedCount} seed × ${iterations}反復 × ${pairsPerIteration}組、評価は各候補・各指標${evalGames}局（学習と同じ深さ）`);
 console.log(`現在の stepIteration=${stateFile.stepIteration ?? 0}、学習率=${learningRate(stateFile.stepIteration ?? 0).toFixed(4)}、再加熱後=${learningRate(0).toFixed(4)}`);
 if (rows.length) console.log(`チェックポイントから${rows.length}件を復元しました`);
 
@@ -249,9 +256,9 @@ try {
     for (const strategy of strategies) {
       if (rows.some((row) => row.replicate === replicate && row.strategy === strategy.name)) continue;
       const weights = await train(pool, strategy, replicate);
-      const championScore = await compare(pool, weights, champion, replicate, 100_000);
-      const initialScore = await compare(pool, weights, initial, replicate, 200_000);
-      const leagueScore = await compare(pool, weights, 'league', replicate, 300_000);
+      const championScore = await compare(pool, weights, champion, replicate, 100_000, strategy.depth);
+      const initialScore = await compare(pool, weights, initial, replicate, 200_000, strategy.depth);
+      const leagueScore = await compare(pool, weights, 'league', replicate, 300_000, strategy.depth);
       const movementFromChampion = Math.sqrt(sum(tuned.map((feature) => (weights[feature] - champion[feature]) ** 2)));
       const row = { strategy: strategy.name, replicate, champion: championScore, initial: initialScore, league: leagueScore, movementFromChampion, weights };
       rows.push(row);
