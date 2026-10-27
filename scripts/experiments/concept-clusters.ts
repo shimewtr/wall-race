@@ -42,13 +42,27 @@ const discovered = await discoveryPool.runAll(Array.from({ length: games }, (_, 
 })));
 await discoveryPool.close();
 
-const positionKey = (row: Disagreement) => JSON.stringify([
-  row.position.pawns,
-  row.position.wallsLeft,
-  row.position.hWalls,
-  row.position.vWalls,
-  row.position.guidePlayer,
-]);
+const mirror = (notation: string, wall: boolean) => {
+  const max = wall ? 'h'.charCodeAt(0) : 'i'.charCodeAt(0);
+  return String.fromCharCode(max - (notation.charCodeAt(0) - 'a'.charCodeAt(0))) + notation.slice(1);
+};
+const positionKey = (row: Disagreement) => {
+  const normal = JSON.stringify([
+    row.position.pawns,
+    row.position.wallsLeft,
+    [...row.position.hWalls].sort(),
+    [...row.position.vWalls].sort(),
+    row.position.guidePlayer,
+  ]);
+  const mirrored = JSON.stringify([
+    row.position.pawns.map((value) => mirror(value, false)),
+    row.position.wallsLeft,
+    row.position.hWalls.map((value) => mirror(value, true)).sort(),
+    row.position.vWalls.map((value) => mirror(value, true)).sort(),
+    row.position.guidePlayer,
+  ]);
+  return normal < mirrored ? normal : mirrored;
+};
 const unique = new Map<string, Disagreement>();
 for (const row of discovered.flatMap((game) => game.disagreements)) {
   if (row.regret < 1) continue;
