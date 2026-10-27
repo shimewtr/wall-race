@@ -10,6 +10,14 @@
     "vsInitial": 0.8375,
     "vsLeague": 0.6975
   },
+  "finalValidation": {
+    "run": 40425614978,
+    "vsChampionGames": 1600,
+    "vsChampion": 0.504,
+    "vsInitialGames": 400,
+    "vsInitial": 0.87,
+    "result": "rejected"
+  },
   "weights": {
     "pathDiff": 10,
     "rowDiff": -1.1798671069182174,

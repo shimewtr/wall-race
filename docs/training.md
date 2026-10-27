@@ -130,7 +130,9 @@ gh workflow run Train -f minutes=45
 
 120分に近づく長時間実験は、完了単位ごとに `experiment-progress.jsonl` と `experiment-output.json` を更新する。Experimentはキャンセル・タイムアウト時もこれらをartifactへ保存する。対応スクリプトを再開するときは、同じコミット・同じ引数に `--resume-file experiment-progress.jsonl` を加え、workflowの `resume_run`へ再開元run IDを渡す。世代・開始重み・実験条件が一致しない場合は安全のため再開を拒否する。
 
-Experimentで通常の二段階ゲートを満たす候補が見つかった場合は、候補JSONと根拠runを保存し、Promote Candidateワークフローで昇格させる。同ワークフローはTrainと同じconcurrencyを使い、最新チャンピオンの世代一致を確認したうえで、固定した別seedの対チャンピオン1600局・対初期400局を再実行する。両方の基準を通った場合だけチャンピオン・履歴・学習状態・勝率換算式を一括更新する。
+Experimentで通常の二段階ゲートを満たす候補が見つかった場合は、候補JSONと根拠runを保存し、Promote Candidateワークフローで昇格させる。同ワークフローはTrainと同じconcurrencyを使い、最新チャンピオンの世代一致を確認したうえで、固定した別seedの対チャンピオン1600局・対初期400局を再実行する。両方の基準を通った場合だけチャンピオン・履歴・学習状態・勝率換算式を一括更新する。実行前後の `TRAIN_CHAIN=off/on` はActionsのトークンから変更できないため、手元の `gh variable set` で止めて戻し、最後にTrainを起動する。
+
+初回のExperiment由来候補は400局54.3%、独立1200局52.3%で合計約52.8%だったが、Promote Candidateの固定別seed1600局では50.4%となり棄却した。複数候補・seedから良いものを選んだ後の上振れを昇格させないため、Experiment由来候補の最終独立検証は省略しない。
 
 ### 新しいAI特徴量の場合
 
