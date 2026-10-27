@@ -64,6 +64,10 @@ export const withDefaults = (w: Partial<Weights> = {}): Weights => ({ ...DEFAULT
 
 export interface SearchOptions {
   maxDepth: number;
+  // まず maxDepth で読み、壁を選んだ局面だけ指定深さで読み直す（適応深読み実験用）
+  wallGateDepth?: number;
+  // wallGateDepth を有効にする最初の手数。序盤の展開ばらしを深読みしないために使う
+  wallGateAfterPly?: number;
   timeMs?: number;
   weights?: Partial<Weights>;
   // 評価値に加えるランダムノイズの幅。弱い手も選ばれうるので、わざと手加減するレベル向け
@@ -578,6 +582,18 @@ function childDistances(c: Candidate, myDist: number, opDist: number): [number, 
 }
 
 export function search(s: GameState, opts: SearchOptions): SearchResult {
+  const gateDepth = opts.wallGateDepth ?? 0;
+  if (gateDepth > opts.maxDepth && s.ply >= (opts.wallGateAfterPly ?? 0)) {
+    const base = search(s, { ...opts, wallGateDepth: undefined, wallGateAfterPly: undefined });
+    if (base.move.type !== 'wall') return base;
+    const deep = search(s, {
+      ...opts,
+      maxDepth: gateDepth,
+      wallGateDepth: undefined,
+      wallGateAfterPly: undefined,
+    });
+    return { ...deep, nodes: base.nodes + deep.nodes };
+  }
   const weights = withDefaults(opts.weights);
   const rng = opts.rng ?? Math.random;
   const noise = opts.noise ?? 0;
