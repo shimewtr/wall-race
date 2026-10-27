@@ -122,6 +122,35 @@ const results = students.map(({ fraction }) => {
   };
 });
 
+const featureAttribution = FEATURE_NAMES
+  .filter((feature) => current[feature] !== champion[feature])
+  .map((feature) => {
+    const weights = { ...champion, [feature]: current[feature] };
+    let teacherMatches = 0;
+    let criticalFixes = 0;
+    let stableBreaks = 0;
+    let changes = 0;
+    for (let index = 0; index < observations.length; index++) {
+      const row = observations[index];
+      const move = moveToString(search(samples[index].state, { maxDepth: 3, weights, repeatPenalty: 0 }).move);
+      if (move === row.teacher4) teacherMatches++;
+      if (move !== row.champion3) changes++;
+      if (row.champion3 !== row.teacher4 && move === row.teacher4) criticalFixes++;
+      if (row.champion3 === row.teacher4 && move !== row.teacher4) stableBreaks++;
+    }
+    return {
+      feature,
+      champion: champion[feature],
+      current: current[feature],
+      teacherMatches,
+      changes,
+      criticalFixes,
+      stableBreaks,
+      netFixes: criticalFixes - stableBreaks,
+    };
+  })
+  .sort((a, b) => a.netFixes - b.netFixes || b.changes - a.changes);
+
 console.log(`# 第${championFile.generation}世代の4手読み教師一致分析`);
 console.log(`収集: ${new Set(observations.map((row) => row.game)).size}局から${observations.length}局面、seed=${seed}`);
 console.log(`3手と4手の判断差: ${critical.length}/${observations.length}（${pct(critical.length, observations.length)}）`);
@@ -130,6 +159,13 @@ console.log('\n| チャンピオン→学習中 | 4手教師との一致 | 3手�
 console.log('| ---: | ---: | ---: | ---: | ---: | ---: |');
 for (const row of results) {
   console.log(`| ${(row.fraction * 100).toFixed(0)}% | ${row.teacherMatches}/${observations.length} (${pct(row.teacherMatches, observations.length)}) | ${row.championChanges}/${observations.length} (${pct(row.championChanges, observations.length)}) | ${row.criticalTeacherMatches}/${critical.length} (${pct(row.criticalTeacherMatches, critical.length)}) | ${row.criticalChampionMatches}/${critical.length} | ${row.criticalOther}/${critical.length} |`);
+}
+
+console.log('\n## 特徴量ごとの学習方向の寄与');
+console.log('| 特徴量 | チャンピオン→学習中 | 4手教師との一致 | 3手判断変更 | 判断差を修正 | 安定局面を破壊 | 正味 |');
+console.log('| --- | ---: | ---: | ---: | ---: | ---: | ---: |');
+for (const row of featureAttribution) {
+  console.log(`| ${row.feature} | ${row.champion.toFixed(3)}→${row.current.toFixed(3)} | ${row.teacherMatches}/${observations.length} | ${row.changes} | ${row.criticalFixes} | ${row.stableBreaks} | ${row.netFixes >= 0 ? '+' : ''}${row.netFixes} |`);
 }
 
 console.log('\n## フェーズ別・学習中重みの教師一致');
@@ -162,5 +198,6 @@ writeFileSync('experiment-output.json', `${JSON.stringify({
   source: { games, maxPositions, sampleEvery, seed, fractions, stepIteration: stateFile.stepIteration ?? 0 },
   critical: critical.length,
   results,
+  featureAttribution,
   fixedExamples: fixed.slice(0, maxExamples),
 }, null, 2)}\n`);
