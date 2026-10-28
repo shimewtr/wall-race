@@ -712,8 +712,8 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
 export const LEVELS = {
   easy: { maxDepth: 1, noise: 8 },
   normal: { maxDepth: 2, noise: 2 },
-  // 第 7 世代では 3 手読みに 70.5%（400 局）。狭い根候補の 4 手読みは平均 13ms / 最大 44ms。
-  hard: { maxDepth: 4, timeMs: 5000, margin: 1 },
+  // 第12世代では4手読みに独立seed各400局で67.0% / 66.8%。最大実測1.2秒、5秒で打ち切る。
+  hard: { maxDepth: 5, timeMs: 5000, margin: 1 },
 } satisfies Record<string, SearchOptions>;
 
 export type Level = keyof typeof LEVELS;

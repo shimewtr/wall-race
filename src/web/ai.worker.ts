@@ -9,7 +9,7 @@ export type AiRequest =
 
 export type AiResponse = { kind: 'move'; id: number; move: Move } | { kind: 'eval'; id: number; score: number };
 
-// 形勢判断の読みの深さ（「つよい」と同じ）
+// 形勢バーは手を指すAIと独立。応答性を保つため3手で評価する。
 export const EVAL_DEPTH = 3;
 
 self.onmessage = (e: MessageEvent<AiRequest>) => {
