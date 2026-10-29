@@ -88,6 +88,8 @@ export interface SearchOptions {
   pickFromTop?: number;
   // 根で最短距離を縮めない駒手への減点（1歩=10点）。深読みの前進効率を軽い探索へ移す実験用。
   rootNonProgressPenalty?: number;
+  // 根で最短距離を実際に増やす駒手への減点（1歩=10点）。必要な横移動を除いて試す実験用。
+  rootDistanceIncreasePenalty?: number;
 }
 
 export const REPEAT_PENALTY = 8;
@@ -671,6 +673,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
           -negamax(work, depth - 1, -Infinity, -floor, 1, cm, co) -
           penalty(c.m) +
           (c.m.type === 'pawn' && c.d >= rootMy ? -(opts.rootNonProgressPenalty ?? 0) : 0) +
+          (c.m.type === 'pawn' && c.d > rootMy ? -(opts.rootDistanceIncreasePenalty ?? 0) : 0) +
           (noise ? (rng() - 0.5) * noise : 0);
         unmakeMove(work, c.m, undo);
         scored.push({ c, v });
