@@ -1,4 +1,4 @@
-// 3手読みと4手読みで判断が違う局面を、両候補手から終局まで指し継いで比較する。
+// 指定した浅い読みと深い読みで判断が違う局面を、両候補手から終局まで指し継いで比較する。
 // 深い読みへの一致率ではなく、実際に勝敗を改善する判断差だけを新特徴量探索へ渡す。
 // 重い処理なのでGitHub ActionsのExperimentで実行する。
 
@@ -30,6 +30,8 @@ const { values: args } = parseArgs({
     changes: { type: 'string', default: '60' },
     'sample-every': { type: 'string', default: '4' },
     'rollout-depth': { type: 'string', default: '3' },
+    'shallow-depth': { type: 'string', default: '3' },
+    'deep-depth': { type: 'string', default: '4' },
     seed: { type: 'string', default: '112000000' },
   },
 });
@@ -44,7 +46,10 @@ const maxPositions = Number(args.positions);
 const maxChanges = Number(args.changes);
 const sampleEvery = Number(args['sample-every']);
 const rolloutDepth = Number(args['rollout-depth']);
+const shallowDepth = Number(args['shallow-depth']);
+const deepDepth = Number(args['deep-depth']);
 const seed = Number(args.seed);
+if (shallowDepth < 3 || deepDepth <= shallowDepth) throw new Error('shallow-depthは3以上、deep-depthはそれより大きくしてください');
 
 interface Sample {
   game: number;
@@ -63,7 +68,7 @@ for (let game = 0; game < games && samples.length < maxPositions; game++) {
       samples.push({ game: game + 1, moves: moves.join(' '), state });
     }
     const move = search(state, {
-      maxDepth: depthAt(state.ply, 3, OPENING_PLIES),
+      maxDepth: depthAt(state.ply, shallowDepth, OPENING_PLIES),
       weights: champion.weights,
       margin: 1,
       pickFromTop: pickAt(state.ply, OPENING_PLIES),
@@ -105,26 +110,26 @@ interface Change {
   sample: Sample;
   disagreement: Disagreement;
   shallowRootGap: number;
-  depth1MatchesDeep: boolean;
-  depth2MatchesDeep: boolean;
+  twoBackMatchesDeep: boolean;
+  oneBackMatchesDeep: boolean;
   values: Record<Feature, number>;
   moveDeltas: Record<Feature | 'raceLeadAfter' | 'wallDiffAfter', number>;
 }
 const changes: Change[] = [];
 const seen = new Set<string>();
 for (const sample of samples) {
-  const depth3 = search(sample.state, { maxDepth: 3, weights: champion.weights, repeatPenalty: 0 });
-  const depth4 = search(sample.state, { maxDepth: 4, weights: champion.weights, repeatPenalty: 0 });
-  if (sameMove(depth3.move, depth4.move)) continue;
-  const depth1 = search(sample.state, { maxDepth: 1, weights: champion.weights, repeatPenalty: 0 });
-  const depth2 = search(sample.state, { maxDepth: 2, weights: champion.weights, repeatPenalty: 0 });
+  const shallow = search(sample.state, { maxDepth: shallowDepth, weights: champion.weights, repeatPenalty: 0 });
+  const deep = search(sample.state, { maxDepth: deepDepth, weights: champion.weights, repeatPenalty: 0 });
+  if (sameMove(shallow.move, deep.move)) continue;
+  const twoBack = search(sample.state, { maxDepth: shallowDepth - 2, weights: champion.weights, repeatPenalty: 0 });
+  const oneBack = search(sample.state, { maxDepth: shallowDepth - 1, weights: champion.weights, repeatPenalty: 0 });
   const key = stateKey(sample.state);
   if (seen.has(key)) continue;
   seen.add(key);
   const me = sample.state.turn;
   const op = (1 - me) as Player;
-  const shallowAfter = applyMove(sample.state, depth3.move);
-  const deepAfter = applyMove(sample.state, depth4.move);
+  const shallowAfter = applyMove(sample.state, shallow.move);
+  const deepAfter = applyMove(sample.state, deep.move);
   // applyMove後は相手手番なので、featuresの符号を反転すると元の手番側から見た値になる。
   const shallowFeatures = evaluateFeatures(shallowAfter);
   const deepFeatures = evaluateFeatures(deepAfter);
@@ -153,20 +158,20 @@ for (const sample of samples) {
   };
   changes.push({
     sample,
-    shallowRootGap: depth3.rootGap ?? Infinity,
-    depth1MatchesDeep: sameMove(depth1.move, depth4.move),
-    depth2MatchesDeep: sameMove(depth2.move, depth4.move),
+    shallowRootGap: shallow.rootGap ?? Infinity,
+    twoBackMatchesDeep: sameMove(twoBack.move, deep.move),
+    oneBackMatchesDeep: sameMove(oneBack.move, deep.move),
     values: evaluateFeatures(sample.state),
     moveDeltas,
     disagreement: {
       position,
-      guideMove: moveToString(depth3.move),
-      expertMove: moveToString(depth4.move),
-      guideType: depth3.move.type,
-      expertType: depth4.move.type,
-      guideScore: depth3.score,
-      expertScore: depth4.score,
-      regret: Math.abs(depth4.score - depth3.score),
+      guideMove: moveToString(shallow.move),
+      expertMove: moveToString(deep.move),
+      guideType: shallow.move.type,
+      expertType: deep.move.type,
+      guideScore: shallow.score,
+      expertScore: deep.score,
+      regret: Math.abs(deep.score - shallow.score),
       myDist: shortestDistance(sample.state, me),
       opDist: shortestDistance(sample.state, op),
       myWalls: sample.state.wallsLeft[me],
@@ -234,9 +239,9 @@ const group = (name: string, candidates: number[]) => {
   console.log(`- ${name}: ${[...counts].sort((a, b) => b[1] - a[1]).map(([key, count]) => `${key} ${count}`).join('、') || 'なし'}`);
 };
 
-console.log(`# 第${champion.generation}世代の3手→4手反実仮想`);
+console.log(`# 第${champion.generation}世代の${shallowDepth}手→${deepDepth}手反実仮想`);
 console.log(`収集: ${new Set(samples.map((sample) => sample.game)).size}局・${samples.length}局面、判断差${changes.length}、seed=${seed}`);
-console.log(`終局追跡: 4手側が改善${improved.length} / 同じ${same.length} / 悪化${worsened.length}（追跡${rolloutDepth}手読み）`);
+console.log(`終局追跡: ${deepDepth}手側が改善${improved.length} / 同じ${same.length} / 悪化${worsened.length}（追跡${rolloutDepth}手読み）`);
 group('改善', improved);
 group('悪化', worsened);
 group('同じ', same);
@@ -249,24 +254,24 @@ console.log('\n## 壁→前進の直後4手');
 for (const [name, candidates] of [['改善', improved], ['同じ', same], ['悪化', worsened]] as const) {
   const patterns = new Map<string, number>();
   for (const index of candidates.filter((value) => kind(value) === 'wall→pawn')) {
-    const key = `3手側 ${moveTypes(outcomes[index].guide.moves)} / 4手側 ${moveTypes(outcomes[index].expert.moves)}`;
+    const key = `${shallowDepth}手側 ${moveTypes(outcomes[index].guide.moves)} / ${deepDepth}手側 ${moveTypes(outcomes[index].expert.moves)}`;
     patterns.set(key, (patterns.get(key) ?? 0) + 1);
   }
   console.log(`- ${name}: ${[...patterns].sort((a, b) => b[1] - a[1]).map(([key, count]) => `${key} ${count}`).join('、') || 'なし'}`);
 }
 console.log('\n## 改善例と悪化例の平均差');
 for (const row of contrasts) console.log(`- ${row.field}: 改善${row.improved.toFixed(2)} / 悪化${row.worsened.toFixed(2)} / 差${(row.improved - row.worsened).toFixed(2)}`);
-console.log('\n## 4手候補−3手候補の手後特徴差');
+console.log(`\n## ${deepDepth}手候補−${shallowDepth}手候補の手後特徴差`);
 for (const row of moveContrasts) console.log(`- ${row.field}: 改善${row.improved.toFixed(2)} / 悪化${row.worsened.toFixed(2)} / 差${(row.improved - row.worsened).toFixed(2)}`);
-console.log('\n## 3手読みの1位・2位評価差');
+console.log(`\n## ${shallowDepth}手読みの1位・2位評価差`);
 for (const [name, candidates] of gapGroups) {
   const gaps = candidates.map((index) => changes[index].shallowRootGap).sort((a, b) => a - b);
   const median = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
   console.log(`- ${name}: 平均${average(gaps).toFixed(2)} / 中央${median.toFixed(2)} / 5点以内${gaps.filter((gap) => gap <= 5).length}/${gaps.length} / 10点以内${gaps.filter((gap) => gap <= 10).length}/${gaps.length}`);
 }
-console.log('\n## 浅い読みと4手読みの一致');
+console.log(`\n## さらに浅い読みと${deepDepth}手読みの一致`);
 for (const [name, candidates] of gapGroups) {
-  console.log(`- ${name}: 1=4 ${candidates.filter((index) => changes[index].depth1MatchesDeep).length}/${candidates.length} / 2=4 ${candidates.filter((index) => changes[index].depth2MatchesDeep).length}/${candidates.length}`);
+  console.log(`- ${name}: ${shallowDepth - 2}=${deepDepth} ${candidates.filter((index) => changes[index].twoBackMatchesDeep).length}/${candidates.length} / ${shallowDepth - 1}=${deepDepth} ${candidates.filter((index) => changes[index].oneBackMatchesDeep).length}/${candidates.length}`);
 }
 console.log('\n## 代表例');
 for (const [name, candidates] of [['改善', improved], ['悪化', worsened]] as const) {
@@ -279,7 +284,7 @@ for (const [name, candidates] of [['改善', improved], ['悪化', worsened]] as
 
 writeFileSync('experiment-output.json', `${JSON.stringify({
   generation: champion.generation,
-  source: { games, maxPositions, maxChanges, sampleEvery, rolloutDepth, seed },
+  source: { games, maxPositions, maxChanges, sampleEvery, rolloutDepth, shallowDepth, deepDepth, seed },
   totals: { sampled: samples.length, changes: changes.length, improved: improved.length, same: same.length, worsened: worsened.length },
   contrasts,
   moveContrasts,
@@ -290,8 +295,8 @@ writeFileSync('experiment-output.json', `${JSON.stringify({
   rows: indexes.map((index) => ({
     delta: deltaAt(index),
     shallowRootGap: changes[index].shallowRootGap,
-    depth1MatchesDeep: changes[index].depth1MatchesDeep,
-    depth2MatchesDeep: changes[index].depth2MatchesDeep,
+    twoBackMatchesDeep: changes[index].twoBackMatchesDeep,
+    oneBackMatchesDeep: changes[index].oneBackMatchesDeep,
     values: changes[index].values,
     moveDeltas: changes[index].moveDeltas,
     change: changes[index].disagreement,
