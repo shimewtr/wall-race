@@ -86,6 +86,8 @@ export interface SearchOptions {
   wideRoot?: boolean;
   // 評価の上位この数の手からランダムに選ぶ（自己対戦の序盤をばらけさせる用）。2 以上なら margin より優先
   pickFromTop?: number;
+  // 根で最短距離を縮めない駒手への減点（1歩=10点）。深読みの前進効率を軽い探索へ移す実験用。
+  rootNonProgressPenalty?: number;
 }
 
 export const REPEAT_PENALTY = 8;
@@ -668,6 +670,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
         const v =
           -negamax(work, depth - 1, -Infinity, -floor, 1, cm, co) -
           penalty(c.m) +
+          (c.m.type === 'pawn' && c.d >= rootMy ? -(opts.rootNonProgressPenalty ?? 0) : 0) +
           (noise ? (rng() - 0.5) * noise : 0);
         unmakeMove(work, c.m, undo);
         scored.push({ c, v });
