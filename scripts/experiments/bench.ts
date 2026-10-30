@@ -42,7 +42,9 @@ for (let g = 0; g < 6; g++) {
   let s = initialState();
   while (!isOver(s)) {
     positions.push(s);
-    s = applyMove(s, search(s, { ...options, maxDepth: 2, weights, margin: 10, rng }).move);
+    // 比較対象の options で局面集合まで変えると速度・ハッシュを同条件で比べられない。
+    // サンプル局面は常に通常探索で固定する。
+    s = applyMove(s, search(s, { maxDepth: 2, weights, margin: 10, rng }).move);
   }
 }
 const sample = positions.filter((_, i) => i % 4 === 0).slice(0, 80);
