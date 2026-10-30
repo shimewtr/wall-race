@@ -13,6 +13,7 @@ import { PairPool, type PairJob } from '../lib/pool';
 const { values: args } = parseArgs({
   options: {
     positions: { type: 'string', default: '120' },
+    'stable-ratio': { type: 'string', default: '2' },
     passes: { type: 'string', default: '2' },
     pairs: { type: 'string', default: '200' },
     'student-depth': { type: 'string', default: '4' },
@@ -21,12 +22,14 @@ const { values: args } = parseArgs({
   },
 });
 const positionCount = Number(args.positions);
+const stableRatio = Number(args['stable-ratio']);
 const passes = Number(args.passes);
 const pairs = Number(args.pairs);
 const studentDepth = Number(args['student-depth']);
 const teacherDepth = Number(args['teacher-depth']);
 const seed = Number(args.seed);
 if (teacherDepth <= studentDepth) throw new Error('teacher-depthはstudent-depthより大きくしてください');
+if (stableRatio < 0) throw new Error('stable-ratioは0以上にしてください');
 
 const root = join(import.meta.dirname, '..', '..');
 const championFile = JSON.parse(readFileSync(join(root, 'training', 'champion.json'), 'utf8')) as {
@@ -91,8 +94,19 @@ const label = (states: GameState[]): LabelledPosition[] => states.map((state) =>
   }).move);
   return { state, teacherMove, baselineMove, critical: teacherMove !== baselineMove };
 });
-const training = label(collect(seed));
+const trainingAll = label(collect(seed));
 const validation = label(collect(seed + 1_000_000));
+const criticalTraining = trainingAll.filter((row) => row.critical);
+const stableTraining = trainingAll.filter((row) => !row.critical);
+const samplingRng = rngFrom(seed + 1_500_000);
+for (let index = stableTraining.length - 1; index > 0; index--) {
+  const swap = Math.floor(samplingRng() * (index + 1));
+  [stableTraining[index], stableTraining[swap]] = [stableTraining[swap], stableTraining[index]];
+}
+const training = [
+  ...criticalTraining,
+  ...stableTraining.slice(0, Math.ceil(criticalTraining.length * stableRatio)),
+];
 
 interface Agreement {
   score: number;
@@ -200,7 +214,8 @@ const describe = (value: Agreement) =>
   `全体${pct(value.rate)}、判断差${value.criticalMatches}/${value.critical} (${pct(value.criticalRate)})、安定破壊${value.stableBreaks}、均衡${pct(value.score)}`;
 
 console.log(`# 第${championFile.generation}世代 ${teacherDepth}手→${studentDepth}手の教師蒸留`);
-console.log(`学習${training.length}局面（判断差${training.filter((row) => row.critical).length}）、検証${validation.length}局面（判断差${validation.filter((row) => row.critical).length}）、seed=${seed}`);
+console.log(`収集: 学習用${trainingAll.length}局面（判断差${criticalTraining.length}）、検証${validation.length}局面（判断差${validation.filter((row) => row.critical).length}）、seed=${seed}`);
+console.log(`重み探索: 判断差全${criticalTraining.length}＋安定${training.length - criticalTraining.length}=${training.length}局面（安定比${stableRatio}）`);
 console.log('\n## 局面一致');
 for (const snapshot of snapshots) {
   console.log(`- ${snapshot.name}: 学習 ${describe(snapshot.training)} / 検証 ${describe(snapshot.validation)}`);
@@ -216,7 +231,7 @@ console.log(`\n## 通常対局\n- 候補 対 チャンピオン（${studentDepth
 
 writeFileSync('experiment-output.json', `${JSON.stringify({
   generation: championFile.generation,
-  source: { positionCount, passes, pairs, studentDepth, teacherDepth, seed },
+  source: { positionCount, stableRatio, passes, pairs, studentDepth, teacherDepth, seed },
   snapshots,
   selected,
   history,
