@@ -1,0 +1,40 @@
+{
+  "status": "experimental-specialist",
+  "depth": 4,
+  "baseGeneration": 12,
+  "createdAt": "2026-10-30",
+  "method": "5手読み教師の独立2標本で共通した重み方向",
+  "weights": {
+    "pathDiff": 10,
+    "rowDiff": -2.671,
+    "wallDiff": 19.743,
+    "urgency": 675.456,
+    "wallsWhenClose": 56.977,
+    "center": -1.119,
+    "adjacent": 4.913,
+    "lockedRace": 27.437,
+    "wallThreat": 5.861,
+    "netWallThreat": 3.906,
+    "wallChain": 2.938,
+    "routeDiversity": 0.193
+  },
+  "validation": {
+    "screening": { "run": 40991158630, "games": 400, "winRate": 0.568 },
+    "finalVsGeneration12": { "run": 40991782594, "games": 1600, "winRate": 0.541 },
+    "depth3": { "run": 41009176192, "games": 400, "winRate": 0.51 },
+    "depth5": { "run": 41009179549, "games": 400, "winRate": 0.393 },
+    "generationLeaguePreliminary": {
+      "run": 41023585976,
+      "gamesPerMethod": 480,
+      "modelAverage": 0.717,
+      "baselineAverage": 0.679
+    },
+    "generationLeagueFinal": {
+      "run": 41024824840,
+      "gamesPerMethod": 1200,
+      "modelAverage": 0.706,
+      "baselineAverage": 0.721
+    }
+  },
+  "decision": "第12世代には強いが歴代リーグで一般化せず不採用。分析・再現用にのみ保存する"
+}

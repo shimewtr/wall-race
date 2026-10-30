@@ -10,7 +10,7 @@ import { PairPool, type PairJob } from '../lib/pool';
 
 const { values: args } = parseArgs({
   options: {
-    model: { type: 'string', default: 'depth4' },
+    model: { type: 'string', default: 'depth4-teacher' },
     depth: { type: 'string', default: '4' },
     pairs: { type: 'string', default: '20' },
     seed: { type: 'string', default: '146000000' },

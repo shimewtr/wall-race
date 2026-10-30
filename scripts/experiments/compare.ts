@@ -2,7 +2,7 @@
 // 重い処理なので GitHub Actions の Experiment ワークフローから実行する。
 //
 // 例: npx tsx scripts/experiments/compare.ts --a '{"wideRoot":true}' --b '{"wideRoot":false}' --pairs 100
-//     --wa / --wb は重み（champion / depth4 / training / initial / JSON / champion+JSON）。省略時はどちらも champion
+//     --wa / --wb は重み（champion / depth4-teacher / training / initial / JSON / champion+JSON）。省略時はどちらも champion
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -25,13 +25,13 @@ const { values: args } = parseArgs({
 });
 
 const CHAMPION = join(import.meta.dirname, '..', '..', 'training', 'champion.json');
-const DEPTH4 = join(import.meta.dirname, '..', '..', 'training', 'depth4.json');
+const DEPTH4_TEACHER = join(import.meta.dirname, '..', '..', 'training', 'depth4-teacher.json');
 const STATE = join(import.meta.dirname, '..', '..', 'training', 'state.json');
-// champion / depth4 / training / initial / JSON / champion+JSON（チャンピオンの重みの一部だけ変える）
+// champion / depth4-teacher / training / initial / JSON / champion+JSON（チャンピオンの重みの一部だけ変える）
 function weights(spec: string): Weights {
   if (spec.startsWith('champion+')) return { ...weights('champion'), ...JSON.parse(spec.slice('champion+'.length)) };
   if (spec === 'initial') return withDefaults();
-  if (spec === 'depth4') return withDefaults(JSON.parse(readFileSync(DEPTH4, 'utf8')).weights);
+  if (spec === 'depth4-teacher') return withDefaults(JSON.parse(readFileSync(DEPTH4_TEACHER, 'utf8')).weights);
   if (spec === 'training') {
     return existsSync(STATE) ? withDefaults(JSON.parse(readFileSync(STATE, 'utf8')).theta) : withDefaults();
   }

@@ -21,14 +21,14 @@ const { values: args } = parseArgs({
 });
 
 const CHAMPION = join(import.meta.dirname, '..', '..', 'training', 'champion.json');
-const DEPTH4 = join(import.meta.dirname, '..', '..', 'training', 'depth4.json');
+const DEPTH4_TEACHER = join(import.meta.dirname, '..', '..', 'training', 'depth4-teacher.json');
 const champion = withDefaults(existsSync(CHAMPION) ? JSON.parse(readFileSync(CHAMPION, 'utf8')).weights : {});
 const weights = args.weights!.startsWith('champion+')
   ? { ...champion, ...JSON.parse(args.weights!.slice('champion+'.length)) }
   : args.weights === 'champion'
     ? champion
-    : args.weights === 'depth4'
-      ? withDefaults(JSON.parse(readFileSync(DEPTH4, 'utf8')).weights)
+    : args.weights === 'depth4-teacher'
+      ? withDefaults(JSON.parse(readFileSync(DEPTH4_TEACHER, 'utf8')).weights)
     : withDefaults(JSON.parse(args.weights!));
 const depth = Number(args.depth);
 const options: Partial<SearchOptions> = JSON.parse(args.options!);
