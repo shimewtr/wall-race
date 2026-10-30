@@ -31,6 +31,8 @@ export interface GameRecord {
 export interface RecordJob {
   weights: Partial<Weights>;
   depth: number;
+  // プレイヤーごとに読みの深さを変える直接対戦分析用。省略時はdepthを両者に使う。
+  depths?: [number, number];
   seed: number;
 }
 
@@ -43,7 +45,7 @@ export function playRecorded(job: RecordJob): GameRecord {
     const me = s.turn;
     const op = (1 - me) as Player;
     const result = search(s, {
-      maxDepth: depthAt(s.ply, job.depth, OPENING_PLIES),
+      maxDepth: depthAt(s.ply, job.depths?.[me] ?? job.depth, OPENING_PLIES),
       weights: job.weights,
       margin: 1,
       pickFromTop: pickAt(s.ply, OPENING_PLIES),
