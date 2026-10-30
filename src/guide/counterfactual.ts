@@ -25,6 +25,10 @@ export interface CounterfactualJob {
   expertDepth?: number;
   /** 各分岐固有の深さを続ける手数。既定の1は従来の単独手比較。 */
   policyPlies?: number;
+  /** 指定時はこのプレイヤーの手だけ分岐固有の深さで読む。 */
+  policyPlayer?: Player;
+  /** policyPlayerが指す分岐固有の手数。最初の強制手を含む。 */
+  policyTurns?: number;
 }
 
 export interface BranchOutcome {
@@ -60,20 +64,27 @@ function playBranch(
   depth: number,
   policyDepth = depth,
   policyPlies = 1,
+  policyPlayer?: Player,
+  policyTurns = 1,
 ): BranchOutcome {
   const history = replayPosition(position);
   const firstMove = moveFromString(firstMoveText);
   if (!firstMove || !isLegal(history.at(-1)!, firstMove)) throw new Error(`候補手が合法ではありません: ${firstMoveText}`);
 
   const continuation: string[] = [firstMoveText];
+  let usedPolicyTurns = 1;
   history.push(applyMove(history.at(-1)!, firstMove));
   while (!isOver(history.at(-1)!)) {
     const state = history.at(-1)!;
+    const usePolicy = policyPlayer === undefined
+      ? continuation.length < policyPlies
+      : state.turn === policyPlayer && usedPolicyTurns < policyTurns;
     const move = search(state, {
-      maxDepth: continuation.length < policyPlies ? policyDepth : depth,
+      maxDepth: usePolicy ? policyDepth : depth,
       weights,
       recent: recentCells(history, state.turn),
     }).move;
+    if (usePolicy && policyPlayer !== undefined) usedPolicyTurns++;
     continuation.push(moveToString(move));
     history.push(applyMove(state, move));
   }
@@ -87,7 +98,9 @@ function playBranch(
 
 export function evaluateCounterfactual(job: CounterfactualJob): CounterfactualResult {
   const policyPlies = job.policyPlies ?? 1;
+  const policyTurns = job.policyTurns ?? 1;
   if (policyPlies < 1) throw new Error('policyPliesは1以上にしてください');
+  if (policyTurns < 1) throw new Error('policyTurnsは1以上にしてください');
   return {
     disagreement: job.disagreement,
     guide: playBranch(
@@ -97,6 +110,8 @@ export function evaluateCounterfactual(job: CounterfactualJob): CounterfactualRe
       job.depth,
       job.guideDepth,
       policyPlies,
+      job.policyPlayer,
+      policyTurns,
     ),
     expert: playBranch(
       job.disagreement.position,
@@ -105,6 +120,8 @@ export function evaluateCounterfactual(job: CounterfactualJob): CounterfactualRe
       job.depth,
       job.expertDepth,
       policyPlies,
+      job.policyPlayer,
+      policyTurns,
     ),
   };
 }
