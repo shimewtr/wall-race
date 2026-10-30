@@ -17,7 +17,14 @@ import { type DiscoveryPosition, type Disagreement } from './discover';
 export interface CounterfactualJob {
   disagreement: Disagreement;
   weights: Partial<Weights>;
+  /** 方策列を終えた後、終局まで共通で使う読みの深さ。 */
   depth: number;
+  /** 最初の候補手を含む policyPlies 手の間、guide側で使う深さ。 */
+  guideDepth?: number;
+  /** 最初の候補手を含む policyPlies 手の間、expert側で使う深さ。 */
+  expertDepth?: number;
+  /** 各分岐固有の深さを続ける手数。既定の1は従来の単独手比較。 */
+  policyPlies?: number;
 }
 
 export interface BranchOutcome {
@@ -46,7 +53,14 @@ export function replayPosition(position: DiscoveryPosition): GameState[] {
   return history;
 }
 
-function playBranch(position: DiscoveryPosition, firstMoveText: string, weights: Partial<Weights>, depth: number): BranchOutcome {
+function playBranch(
+  position: DiscoveryPosition,
+  firstMoveText: string,
+  weights: Partial<Weights>,
+  depth: number,
+  policyDepth = depth,
+  policyPlies = 1,
+): BranchOutcome {
   const history = replayPosition(position);
   const firstMove = moveFromString(firstMoveText);
   if (!firstMove || !isLegal(history.at(-1)!, firstMove)) throw new Error(`候補手が合法ではありません: ${firstMoveText}`);
@@ -56,7 +70,7 @@ function playBranch(position: DiscoveryPosition, firstMoveText: string, weights:
   while (!isOver(history.at(-1)!)) {
     const state = history.at(-1)!;
     const move = search(state, {
-      maxDepth: depth,
+      maxDepth: continuation.length < policyPlies ? policyDepth : depth,
       weights,
       recent: recentCells(history, state.turn),
     }).move;
@@ -72,9 +86,25 @@ function playBranch(position: DiscoveryPosition, firstMoveText: string, weights:
 }
 
 export function evaluateCounterfactual(job: CounterfactualJob): CounterfactualResult {
+  const policyPlies = job.policyPlies ?? 1;
+  if (policyPlies < 1) throw new Error('policyPliesは1以上にしてください');
   return {
     disagreement: job.disagreement,
-    guide: playBranch(job.disagreement.position, job.disagreement.guideMove, job.weights, job.depth),
-    expert: playBranch(job.disagreement.position, job.disagreement.expertMove, job.weights, job.depth),
+    guide: playBranch(
+      job.disagreement.position,
+      job.disagreement.guideMove,
+      job.weights,
+      job.depth,
+      job.guideDepth,
+      policyPlies,
+    ),
+    expert: playBranch(
+      job.disagreement.position,
+      job.disagreement.expertMove,
+      job.weights,
+      job.depth,
+      job.expertDepth,
+      policyPlies,
+    ),
   };
 }

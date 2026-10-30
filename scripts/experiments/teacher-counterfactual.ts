@@ -32,6 +32,7 @@ const { values: args } = parseArgs({
     'rollout-depth': { type: 'string', default: '3' },
     'shallow-depth': { type: 'string', default: '3' },
     'deep-depth': { type: 'string', default: '4' },
+    'policy-plies': { type: 'string', default: '1' },
     seed: { type: 'string', default: '112000000' },
   },
 });
@@ -48,8 +49,10 @@ const sampleEvery = Number(args['sample-every']);
 const rolloutDepth = Number(args['rollout-depth']);
 const shallowDepth = Number(args['shallow-depth']);
 const deepDepth = Number(args['deep-depth']);
+const policyPlies = Number(args['policy-plies']);
 const seed = Number(args.seed);
 if (shallowDepth < 3 || deepDepth <= shallowDepth) throw new Error('shallow-depthは3以上、deep-depthはそれより大きくしてください');
+if (policyPlies < 1) throw new Error('policy-pliesは1以上にしてください');
 
 interface Sample {
   game: number;
@@ -190,6 +193,9 @@ const outcomes = await pool.runAll(changes.map(({ disagreement }) => ({
   disagreement,
   weights: champion.weights,
   depth: rolloutDepth,
+  guideDepth: shallowDepth,
+  expertDepth: deepDepth,
+  policyPlies,
 })));
 await pool.close();
 
@@ -241,7 +247,7 @@ const group = (name: string, candidates: number[]) => {
 
 console.log(`# 第${champion.generation}世代の${shallowDepth}手→${deepDepth}手反実仮想`);
 console.log(`収集: ${new Set(samples.map((sample) => sample.game)).size}局・${samples.length}局面、判断差${changes.length}、seed=${seed}`);
-console.log(`終局追跡: ${deepDepth}手側が改善${improved.length} / 同じ${same.length} / 悪化${worsened.length}（追跡${rolloutDepth}手読み）`);
+console.log(`終局追跡: ${deepDepth}手側が改善${improved.length} / 同じ${same.length} / 悪化${worsened.length}（各方策${policyPlies}手、その後${rolloutDepth}手読み）`);
 group('改善', improved);
 group('悪化', worsened);
 group('同じ', same);
@@ -284,7 +290,7 @@ for (const [name, candidates] of [['改善', improved], ['悪化', worsened]] as
 
 writeFileSync('experiment-output.json', `${JSON.stringify({
   generation: champion.generation,
-  source: { games, maxPositions, maxChanges, sampleEvery, rolloutDepth, shallowDepth, deepDepth, seed },
+  source: { games, maxPositions, maxChanges, sampleEvery, rolloutDepth, shallowDepth, deepDepth, policyPlies, seed },
   totals: { sampled: samples.length, changes: changes.length, improved: improved.length, same: same.length, worsened: worsened.length },
   contrasts,
   moveContrasts,
