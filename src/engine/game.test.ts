@@ -508,6 +508,11 @@ describe('特徴量 wallChain', () => {
     s.wallsLeft[0] = 1;
     expect(features(s, undefined, undefined, false, false, false).wallChain).toBe(0);
   });
+
+  it('1枚目の次点候補も調べれば連携値は下がらない', () => {
+    const s = place(initialState(), 3, 3, 'h');
+    expect(maxWallChain(s, 1, undefined, 2)).toBeGreaterThanOrEqual(maxWallChain(s, 1));
+  });
 });
 
 describe('特徴量 routeDiversity', () => {
