@@ -92,8 +92,6 @@ export interface SearchOptions {
   rootDistanceIncreasePenalty?: number;
   // 根で自分の最短距離を伸ばす壁への1歩あたりの減点（1歩=10点）。深読みの壁品質を軽い探索へ移す実験用。
   rootSelfHarmWallPenalty?: number;
-  // wallChain の1枚目として、即時効果最大に加えて次点も1候補だけ調べる（実験用）。
-  wallChainFirstCandidates?: number;
 }
 
 export const REPEAT_PENALTY = 8;
@@ -147,13 +145,10 @@ interface DetourResult {
   // 即時効果が同率最大の壁をすべて残す。wallChain が走査順で1枚を選ぶと、
   // 左右反転した等価局面で別の2枚目を評価してしまうため。
   walls: Array<{ x: number; y: number; o: 'h' | 'v'; afterDist: number }>;
-  // 即時効果が2番目に高い壁。2枚連携のために少し即時効果を犠牲にする実験で使う。
-  runnerUpWalls: Array<{ x: number; y: number; o: 'h' | 'v'; afterDist: number }>;
 }
 const detourCache = new Map<number, DetourResult>();
 const netDetourCache = new Map<number, number>();
 const wallChainCache = new Map<number, number>();
-const wallChainTwoFirstCache = new Map<number, number>();
 // 計測用（profile 実験で使う）
 export const detourStats = { calls: 0, misses: 0 };
 const DETOUR_CACHE_LIMIT = 500_000;
@@ -208,8 +203,6 @@ export function maxNetDetour(
   let best = 0;
   let rawBest = 0;
   let rawWalls: DetourResult['walls'] = [];
-  let rawRunnerUp = -Infinity;
-  let rawRunnerUpWalls: DetourResult['runnerUpWalls'] = [];
   const tryWall = (x: number, y: number, o: 'h' | 'v') => {
     if (x < 0 || y < 0 || x >= WALL_SLOTS || y >= WALL_SLOTS || !wallFits(s, x, y, o)) return;
     const wallKey = (o === 'h' ? 0 : WALL_SLOTS * WALL_SLOTS) + y * WALL_SLOTS + x;
@@ -227,17 +220,10 @@ export function maxNetDetour(
     walls[i] = 0;
     if (victimAfter < 0) return;
     if (rawWalls.length === 0 || raw > rawBest) {
-      rawRunnerUp = rawBest;
-      rawRunnerUpWalls = rawWalls;
       rawBest = raw;
       rawWalls = [{ x, y, o, afterDist: victimAfter }];
     } else if (raw === rawBest) {
       rawWalls.push({ x, y, o, afterDist: victimAfter });
-    } else if (raw > rawRunnerUp) {
-      rawRunnerUp = raw;
-      rawRunnerUpWalls = [{ x, y, o, afterDist: victimAfter }];
-    } else if (raw === rawRunnerUp) {
-      rawRunnerUpWalls.push({ x, y, o, afterDist: victimAfter });
     }
     if (raw > best && attackerAfter >= 0) {
       best = Math.max(best, raw - Math.max(0, attackerAfter - attackerDist));
@@ -258,7 +244,7 @@ export function maxNetDetour(
   }
   const rawKey = detourKey(s, attacker);
   if (detourCache.size >= DETOUR_CACHE_LIMIT) detourCache.clear();
-  detourCache.set(rawKey, { value: rawBest, walls: rawWalls, runnerUpWalls: rawRunnerUpWalls });
+  detourCache.set(rawKey, { value: rawBest, walls: rawWalls });
   if (netDetourCache.size >= DETOUR_CACHE_LIMIT) netDetourCache.clear();
   netDetourCache.set(key, best);
   return best;
@@ -269,12 +255,10 @@ export function maxNetDetour(
 function computeBestDetour(s: GameState, attacker: Player, victimDist: number): DetourResult {
   const victim = (1 - attacker) as Player;
   const path = shortestPath(s, victim);
-  if (!path) return { value: 0, walls: [], runnerUpWalls: [] };
+  if (!path) return { value: 0, walls: [] };
   const seen = new Set<number>();
   let best = 0;
   let bestWalls: DetourResult['walls'] = [];
-  let runnerUp = -Infinity;
-  let runnerUpWalls: DetourResult['runnerUpWalls'] = [];
   const tryWall = (x: number, y: number, o: 'h' | 'v') => {
     if (x < 0 || y < 0 || x >= WALL_SLOTS || y >= WALL_SLOTS || !wallFits(s, x, y, o)) return;
     const wallKey = (o === 'h' ? 0 : WALL_SLOTS * WALL_SLOTS) + y * WALL_SLOTS + x;
@@ -288,17 +272,10 @@ function computeBestDetour(s: GameState, attacker: Player, victimDist: number): 
     if (d < 0) return;
     const gain = Math.max(0, d - victimDist);
     if (bestWalls.length === 0 || gain > best) {
-      runnerUp = best;
-      runnerUpWalls = bestWalls;
       best = gain;
       bestWalls = [{ x, y, o, afterDist: d }];
     } else if (gain === best) {
       bestWalls.push({ x, y, o, afterDist: d });
-    } else if (gain > runnerUp) {
-      runnerUp = gain;
-      runnerUpWalls = [{ x, y, o, afterDist: d }];
-    } else if (gain === runnerUp) {
-      runnerUpWalls.push({ x, y, o, afterDist: d });
     }
   };
   for (let k = 0; k + 1 < path.length; k++) {
@@ -314,7 +291,7 @@ function computeBestDetour(s: GameState, attacker: Player, victimDist: number): 
       tryWall(x, a.y - 1, 'v');
     }
   }
-  return { value: best, walls: bestWalls, runnerUpWalls };
+  return { value: best, walls: bestWalls };
 }
 
 // 2 枚の壁を続けて使ったとき、最善の 1 枚だけより何歩多く遠回りさせられるか。
@@ -360,11 +337,10 @@ function canonicalDetourWall(s: GameState, attacker: Player, walls: DetourResult
 
 // 全候補を二重に調べると評価が重くなりすぎるため、1 枚目は即時効果が最大の候補に絞る。
 // 同率なら盤面を正規化した順で1枚だけ選び、対称性と速度を両立する。
-export function maxWallChain(s: GameState, attacker: Player, victimDist?: number, firstCandidates = 1): number {
+export function maxWallChain(s: GameState, attacker: Player, victimDist?: number): number {
   if (s.wallsLeft[attacker] < 2) return 0;
   const key = detourKey(s, attacker);
-  const cache = firstCandidates > 1 ? wallChainTwoFirstCache : wallChainCache;
-  const cached = cache.get(key);
+  const cached = wallChainCache.get(key);
   if (cached !== undefined) return cached;
 
   const victim = (1 - attacker) as Player;
@@ -376,22 +352,16 @@ export function maxWallChain(s: GameState, attacker: Player, victimDist?: number
     detourCache.set(key, first);
   }
   if (first.walls.length === 0) return 0;
-  const candidates = [canonicalDetourWall(s, attacker, first.walls)];
-  if (firstCandidates > 1 && first.runnerUpWalls.length > 0) {
-    candidates.push(canonicalDetourWall(s, attacker, first.runnerUpWalls));
-  }
-  let result = 0;
-  for (const c of candidates) {
-    const walls = c.o === 'h' ? s.hWalls : s.vWalls;
-    const i = c.y * WALL_SLOTS + c.x;
-    walls[i] = 1;
-    // 次点の1枚目は、即時効果を犠牲にした分を2枚目の効果から差し引く。
-    const chainGain = Math.max(0, maxDetour(s, attacker, c.afterDist) + c.afterDist - baseDist - first.value);
-    walls[i] = 0;
-    result = Math.max(result, chainGain);
-  }
-  if (cache.size >= DETOUR_CACHE_LIMIT) cache.clear();
-  cache.set(key, result);
+  const c = canonicalDetourWall(s, attacker, first.walls);
+  const walls = c.o === 'h' ? s.hWalls : s.vWalls;
+  const i = c.y * WALL_SLOTS + c.x;
+  walls[i] = 1;
+  // 1枚目の効果は maxDetour と共通なので、追加分は置いた後に残る「次の1枚」の効果そのもの。
+  // この「1枚目を置いた盤面」は実際の探索でも現れうるので、2枚目の計算結果も通常キャッシュへ残す。
+  const result = maxDetour(s, attacker, c.afterDist);
+  walls[i] = 0;
+  if (wallChainCache.size >= DETOUR_CACHE_LIMIT) wallChainCache.clear();
+  wallChainCache.set(key, result);
   return result;
 }
 
@@ -459,7 +429,6 @@ export function features(
   withRouteDiversity = true,
   withWallChain = true,
   withNetWallThreat = true,
-  wallChainFirstCandidates = 1,
 ): Weights {
   const me = s.turn;
   const op = (1 - me) as Player;
@@ -482,7 +451,7 @@ export function features(
     wallThreat: withThreat ? maxDetour(s, me, opDist) - maxDetour(s, op, myDist) : 0,
     netWallThreat: myNetThreat - opNetThreat,
     wallChain: withWallChain
-      ? maxWallChain(s, me, opDist, wallChainFirstCandidates) - maxWallChain(s, op, myDist, wallChainFirstCandidates)
+      ? maxWallChain(s, me, opDist) - maxWallChain(s, op, myDist)
       : 0,
     routeDiversity: withRouteDiversity ? shortestRouteDiversity(s, me) - shortestRouteDiversity(s, op) : 0,
   };
@@ -494,7 +463,6 @@ export function evaluate(
   w: Weights = DEFAULT_WEIGHTS,
   myDist?: number,
   opDist?: number,
-  wallChainFirstCandidates = 1,
 ): number {
   if (s.winner !== null) return s.winner === s.turn ? WIN : -WIN;
   if (s.draw) return 0;
@@ -506,7 +474,6 @@ export function evaluate(
     w.routeDiversity !== 0,
     w.wallChain !== 0,
     w.netWallThreat !== 0,
-    wallChainFirstCandidates,
   );
   let score = 0;
   for (const k of FEATURE_NAMES) score += w[k] * f[k];
@@ -672,7 +639,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
       if (st.winner === null) return 0;
       return st.winner === st.turn ? WIN - ply : -WIN + ply;
     }
-    if (depth === 0) return evaluate(st, weights, myDist, opDist, opts.wallChainFirstCandidates ?? 1);
+    if (depth === 0) return evaluate(st, weights, myDist, opDist);
     let best = -Infinity;
     for (const c of orderedMoves(st)) {
       const [cm, co] = childDistances(c, myDist, opDist);
@@ -683,9 +650,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
       if (v > alpha) alpha = v;
       if (alpha >= beta) break;
     }
-    return best === -Infinity
-      ? evaluate(st, weights, myDist, opDist, opts.wallChainFirstCandidates ?? 1)
-      : best;
+    return best === -Infinity ? evaluate(st, weights, myDist, opDist) : best;
   };
 
   const rootMoves = orderedMoves(s, opts.wideRoot ?? WIDE_ROOT_DEFAULT);
