@@ -25,6 +25,7 @@ import {
   maxNetDetour,
   maxWallChain,
   recentCells,
+  rootSelfHarmWallCost,
   search,
   shortestRouteDiversity,
 } from './ai';
@@ -234,6 +235,14 @@ describe('壁の候補（wide）', () => {
       const touchesPawn = s.pawns.some((p) => (m.x === p.x || m.x === p.x - 1) && (m.y === p.y || m.y === p.y - 1));
       if (!touchesPawn) expect(shortestDistance(applyMove(s, m), 0)).toBe(8);
     }
+  });
+});
+
+describe('根の自損壁減点', () => {
+  it('自分の最短距離が伸びた歩数だけ減点する', () => {
+    expect(rootSelfHarmWallCost(10, 8, 4)).toBe(8);
+    expect(rootSelfHarmWallCost(8, 8, 4)).toBe(0);
+    expect(rootSelfHarmWallCost(-1, 8, 4)).toBe(0);
   });
 });
 

@@ -95,6 +95,13 @@ export interface SearchOptions {
 }
 
 export const REPEAT_PENALTY = 8;
+
+// wallCandidates の meAfter は、その壁が自分の現在の最短路を横切らなければ -1。
+// 根の実験用減点では -1 を「変化なし」として扱う。
+export function rootSelfHarmWallCost(meAfter: number, before: number, perStep: number): number {
+  return meAfter > before ? (meAfter - before) * perStep : 0;
+}
+
 // 根でも相手の最短経路をふさぐ壁だけを候補にする。
 // 広い候補との比較は 3 手・4 手読みとも 400 局で互角、狭い候補は約 4〜7 倍速かった。
 export const WIDE_ROOT_DEFAULT = false;
@@ -676,7 +683,9 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
           penalty(c.m) +
           (c.m.type === 'pawn' && c.d >= rootMy ? -(opts.rootNonProgressPenalty ?? 0) : 0) +
           (c.m.type === 'pawn' && c.d > rootMy ? -(opts.rootDistanceIncreasePenalty ?? 0) : 0) +
-          (c.m.type === 'wall' && c.d > rootMy ? -(c.d - rootMy) * (opts.rootSelfHarmWallPenalty ?? 0) : 0) +
+          (c.m.type === 'wall'
+            ? -rootSelfHarmWallCost(c.meAfter, rootMy, opts.rootSelfHarmWallPenalty ?? 0)
+            : 0) +
           (noise ? (rng() - 0.5) * noise : 0);
         unmakeMove(work, c.m, undo);
         scored.push({ c, v });
