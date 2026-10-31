@@ -86,6 +86,22 @@ const wallAnchorDistance = (aText: string, bText: string) => {
   if (a?.type !== 'wall' || b?.type !== 'wall') return null;
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 };
+const wallGeometry = (disagreement: Disagreement, branch: 'guide' | 'expert') => {
+  const move = moveFromString(branch === 'guide' ? disagreement.guideMove : disagreement.expertMove);
+  if (move?.type !== 'wall') return null;
+  const existing = [...disagreement.position.hWalls, ...disagreement.position.vWalls]
+    .map(moveFromString)
+    .filter((wall) => wall?.type === 'wall');
+  const distances = existing.map((wall) => Math.abs(move.x - wall!.x) + Math.abs(move.y - wall!.y));
+  const sameOrientation = existing
+    .filter((wall) => wall!.o === move.o)
+    .map((wall) => Math.abs(move.x - wall!.x) + Math.abs(move.y - wall!.y));
+  return {
+    edge: move.o === 'h' ? move.x === 0 || move.x === 7 : move.y === 0 || move.y === 7,
+    nearest: distances.length ? Math.min(...distances) : null,
+    nearestSameOrientation: sameOrientation.length ? Math.min(...sameOrientation) : null,
+  };
+};
 
 console.log(`# 反実仮想分析: 手引き AI 対 第 ${champion.generation} 世代`);
 console.log();
@@ -113,6 +129,7 @@ for (const name of kinds) {
 }
 
 const average = (values: number[]) => (values.length ? (values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2) : '-');
+const present = (values: Array<number | null>) => values.filter((value): value is number => value !== null);
 const wallGroups = [
   ['改善', improved.filter((result) => result.disagreement.wallComparison)],
   ['同じ・悪化', [...unchanged, ...worsened].filter((result) => result.disagreement.wallComparison)],
@@ -136,6 +153,26 @@ if (wallGroups.some(([, group]) => group.length)) {
     );
     console.log(
       `  - 端につなぐ2枚目の正味効果: 手引き ${average(disagreements.map((d) => d.wallComparison!.guide.extensionNetGain))} / 探索AI ${average(disagreements.map((d) => d.wallComparison!.expert.extensionNetGain))}`,
+    );
+    const guideGeometry = disagreements.map((d) => wallGeometry(d, 'guide')!);
+    const expertGeometry = disagreements.map((d) => wallGeometry(d, 'expert')!);
+    console.log(
+      `  - 相手駒から壁まで: 手引き ${average(disagreements.map((d) => d.wallComparison!.guide.pawnDistanceToWall))} / 探索AI ${average(disagreements.map((d) => d.wallComparison!.expert.pawnDistanceToWall))}`,
+    );
+    console.log(
+      `  - 代表最短路を切る位置: 手引き ${average(present(disagreements.map((d) => d.wallComparison!.guide.routeCutStep)))} / 探索AI ${average(present(disagreements.map((d) => d.wallComparison!.expert.routeCutStep)))}`,
+    );
+    console.log(
+      `  - 既存壁への最短アンカー距離: 手引き ${average(present(guideGeometry.map((g) => g.nearest)))} / 探索AI ${average(present(expertGeometry.map((g) => g.nearest)))}`,
+    );
+    console.log(
+      `  - 同方向の既存壁への最短アンカー距離: 手引き ${average(present(guideGeometry.map((g) => g.nearestSameOrientation)))} / 探索AI ${average(present(expertGeometry.map((g) => g.nearestSameOrientation)))}`,
+    );
+    console.log(
+      `  - 盤端へ接する壁: 手引き ${guideGeometry.filter((g) => g.edge).length}/${group.length} / 探索AI ${expertGeometry.filter((g) => g.edge).length}/${group.length}`,
+    );
+    console.log(
+      `  - 両候補壁のアンカー距離: ${average(present(disagreements.map((d) => wallAnchorDistance(d.guideMove, d.expertMove))))}`,
     );
   }
   console.log('- 条件別の内訳（改善 / 同じ・悪化）:');
