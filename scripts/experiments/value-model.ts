@@ -209,42 +209,57 @@ const result = {
 const logit = (p: number) => Math.log(Math.max(1e-9, Math.min(1 - 1e-9, p)) / Math.max(1e-9, 1 - Math.min(1 - 1e-9, p)));
 const standardizedRaw = (sample: Sample, index: number) => (sample.raw[index] - linear.means[index]) / linear.scales[index];
 const allPairInteractions = [];
+const oddPairInteractions = [];
+function scanInteraction(name: string, productAt: (sample: Sample) => number) {
+  const products = train.map(productAt);
+  const mean = products.reduce((sum, value) => sum + value, 0) / products.length;
+  const scale = Math.max(1e-6, Math.sqrt(products.reduce((sum, value) => sum + (value - mean) ** 2, 0) / products.length));
+  let coefficient = 0;
+  for (let iteration = 0; iteration < 30; iteration++) {
+    let gradient = -coefficient;
+    let hessian = 1;
+    for (let i = 0; i < train.length; i++) {
+      const z = (products[i] - mean) / scale;
+      const base = logit(predict(train[i], linear));
+      const p = 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, base + coefficient * z))));
+      gradient += (train[i].won - p) * z;
+      hessian += p * (1 - p) * z * z;
+    }
+    const delta = gradient / hessian;
+    coefficient += delta;
+    if (Math.abs(delta) < 1e-8) break;
+  }
+  const candidate = metrics(test, (sample) => {
+    const z = (productAt(sample) - mean) / scale;
+    const base = logit(predict(sample, linear));
+    return 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, base + coefficient * z))));
+  });
+  return {
+    name,
+    coefficient,
+    brierGain: result.all.linear.brier - candidate.brier,
+    logLossGain: result.all.linear.logLoss - candidate.logLoss,
+    highConfidenceErrorGain: result.all.linear.highConfidenceError - candidate.highConfidenceError,
+  };
+}
 for (let left = 0; left < FEATURE_NAMES.length; left++) {
   for (let right = left + 1; right < FEATURE_NAMES.length; right++) {
-    const products = train.map((sample) => standardizedRaw(sample, left) * standardizedRaw(sample, right));
-    const mean = products.reduce((sum, value) => sum + value, 0) / products.length;
-    const scale = Math.max(1e-6, Math.sqrt(products.reduce((sum, value) => sum + (value - mean) ** 2, 0) / products.length));
-    let coefficient = 0;
-    for (let iteration = 0; iteration < 30; iteration++) {
-      let gradient = -coefficient;
-      let hessian = 1;
-      for (let i = 0; i < train.length; i++) {
-        const z = (products[i] - mean) / scale;
-        const base = logit(predict(train[i], linear));
-        const p = 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, base + coefficient * z))));
-        gradient += (train[i].won - p) * z;
-        hessian += p * (1 - p) * z * z;
-      }
-      const delta = gradient / hessian;
-      coefficient += delta;
-      if (Math.abs(delta) < 1e-8) break;
-    }
-    const candidate = metrics(test, (sample) => {
-      const product = standardizedRaw(sample, left) * standardizedRaw(sample, right);
-      const z = (product - mean) / scale;
-      const base = logit(predict(sample, linear));
-      return 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, base + coefficient * z))));
-    });
-    allPairInteractions.push({
-      name: `${FEATURE_NAMES[left]}×${FEATURE_NAMES[right]}`,
-      coefficient,
-      brierGain: result.all.linear.brier - candidate.brier,
-      logLossGain: result.all.linear.logLoss - candidate.logLoss,
-      highConfidenceErrorGain: result.all.linear.highConfidenceError - candidate.highConfidenceError,
-    });
+    allPairInteractions.push(scanInteraction(
+      `${FEATURE_NAMES[left]}×${FEATURE_NAMES[right]}`,
+      (sample) => standardizedRaw(sample, left) * standardizedRaw(sample, right),
+    ));
+    oddPairInteractions.push(scanInteraction(
+      `${FEATURE_NAMES[left]}×|${FEATURE_NAMES[right]}|`,
+      (sample) => sample.raw[left] * Math.abs(sample.raw[right]),
+    ));
+    oddPairInteractions.push(scanInteraction(
+      `${FEATURE_NAMES[right]}×|${FEATURE_NAMES[left]}|`,
+      (sample) => sample.raw[right] * Math.abs(sample.raw[left]),
+    ));
   }
 }
 allPairInteractions.sort((a, b) => b.logLossGain - a.logLossGain);
+oddPairInteractions.sort((a, b) => b.logLossGain - a.logLossGain);
 
 const printRow = (name: string, value: ReturnType<typeof evaluate>) => {
   console.log(`${name} (${value.current.n}局面):`);
@@ -269,4 +284,10 @@ for (const item of allPairInteractions.slice(0, 12)) {
     `  ${item.name}: log loss ${item.logLossGain >= 0 ? '+' : ''}${item.logLossGain.toFixed(5)} / Brier ${item.brierGain >= 0 ? '+' : ''}${item.brierGain.toFixed(5)} / 係数 ${item.coefficient.toFixed(4)}`,
   );
 }
-writeFileSync('experiment-output.json', `${JSON.stringify({ ...result, interactionCoefficients, allPairInteractions }, null, 2)}\n`);
+console.log('符号を保つ方向別交互作用の未知対局 log loss 改善上位:');
+for (const item of oddPairInteractions.slice(0, 12)) {
+  console.log(
+    `  ${item.name}: log loss ${item.logLossGain >= 0 ? '+' : ''}${item.logLossGain.toFixed(5)} / Brier ${item.brierGain >= 0 ? '+' : ''}${item.brierGain.toFixed(5)} / 係数 ${item.coefficient.toFixed(4)}`,
+  );
+}
+writeFileSync('experiment-output.json', `${JSON.stringify({ ...result, interactionCoefficients, allPairInteractions, oddPairInteractions }, null, 2)}\n`);
