@@ -78,7 +78,11 @@ export const GUIDE_V7: GuideParams = { ...GUIDE_V6, backtrackCost: 0.5 };
 // 第 8 版: 第12世代との前進手の判断差191局面を分析すると、手引きは直近マスへ103回戻り、探索AIは23回だった。
 // 壁切れ後だけ戻る手を2歩減点すると、全世代リーグ各100局で平均68.7%→69.9%。第12世代への勝率も維持した。
 export const GUIDE_V8: GuideParams = { ...GUIDE_V7, noWallBacktrackCost: 2 };
-export const GUIDE_CURRENT: GuideParams = GUIDE_V8;
+// 第 9 版: 駒手同士を勝敗対照・終局追跡すると、改善局面では探索AIが平均1.92歩多く前進した。
+// 最短距離を1歩縮めない駒手へ、縮めなかった歩数あたり1歩のコストを付けると、
+// 全世代リーグ各100局で平均64.8%→70.8%。第12世代2・3手合算も56.5%→57.0%を維持した。
+export const GUIDE_V9: GuideParams = { ...GUIDE_V8, offPathCost: 1 };
+export const GUIDE_CURRENT: GuideParams = GUIDE_V9;
 
 // 手番側から見た歩数の差（0 以上なら手番側が先着）
 const lead = (s: GameState) => shortestDistance(s, (1 - s.turn) as Player) - shortestDistance(s, s.turn);

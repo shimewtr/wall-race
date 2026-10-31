@@ -32,7 +32,7 @@ import {
 import { fitCalibration, winRate } from '../train/calibrate';
 import type { MoveRecord } from '../train/record';
 import { rngFrom } from '../train/match';
-import { GUIDE_ADVANCED, GUIDE_CURRENT, GUIDE_V5, GUIDE_V7, guideMove } from '../guide/policy';
+import { GUIDE_ADVANCED, GUIDE_CURRENT, GUIDE_V5, GUIDE_V7, GUIDE_V8, guideMove } from '../guide/policy';
 
 const sortPos = (ps: { x: number; y: number }[]) =>
   ps.map((p) => `${p.x},${p.y}`).sort();
@@ -276,7 +276,7 @@ describe('手引き AI', () => {
     for (const text of moves.split(' ')) s = applyMove(s, moveFromString(text)!);
     expect(s.wallsLeft[s.turn]).toBe(1);
     expect(moveToString(guideMove(s, GUIDE_V5))).toBe('b8h');
-    expect(guideMove(s, GUIDE_CURRENT).type).toBe('pawn');
+    expect(guideMove(s, GUIDE_V8).type).toBe('pawn');
   });
 
   it('戻る手にコストを設定すれば、同じ場所の往復を避ける', () => {
@@ -284,8 +284,20 @@ describe('手引き AI', () => {
     const history = [initialState()];
     for (const text of moves.split(' ')) history.push(applyMove(history.at(-1)!, moveFromString(text)!));
     const s = history.at(-1)!;
-    expect(moveToString(guideMove(s, GUIDE_CURRENT))).toBe('e3');
-    expect(moveToString(guideMove(s, { ...GUIDE_CURRENT, backtrackCost: 1 }, recentCells(history, s.turn)))).not.toBe('e3');
+    expect(moveToString(guideMove(s, GUIDE_V8))).toBe('e3');
+    expect(moveToString(guideMove(s, { ...GUIDE_V8, backtrackCost: 1 }, recentCells(history, s.turn)))).not.toBe('e3');
+  });
+
+  it('最短路を縮めない駒手より、ゴールへ近づく手を優先する', () => {
+    const moves = 'f1 e8 f2 e7 e2 e6 e3 e5 d3 e4 d4 e3 d5 e2 d1h d6h e2v e3 c5 b5h b5 a4v c5 c4v c4 a3h c3 d3h c2 b1h b2 f1h a2 h6h a1 d3 c2h f6h b1 e3 c1 e2 d1 e3 e1 e2 f1 e3 g1 e2 h1 e3 h2 e2 h3 e3 h4 e2 g4 e3 g5 e2 f5 e3 e5 e2 d5';
+    const history = [initialState()];
+    for (const text of moves.split(' ')) history.push(applyMove(history.at(-1)!, moveFromString(text)!));
+    const s = history.at(-1)!;
+    const oldMove = guideMove(s, GUIDE_V8);
+    const newMove = guideMove(s, GUIDE_CURRENT);
+    expect(moveToString(oldMove)).toBe('e3');
+    expect(moveToString(newMove)).toBe('d2');
+    expect(shortestDistance(applyMove(s, newMove), s.turn)).toBeLessThan(shortestDistance(applyMove(s, oldMove), s.turn));
   });
 
   it('壁が尽きた後だけ戻る手のコストを上書きできる', () => {
@@ -297,7 +309,7 @@ describe('手引き AI', () => {
     expect(moveToString(guideMove(s, GUIDE_V7, recentCells(history, s.turn)))).toBe('d7');
     expect(
       moveToString(
-        guideMove(s, { ...GUIDE_CURRENT, noWallBacktrackCost: 2 }, recentCells(history, s.turn)),
+        guideMove(s, { ...GUIDE_V8, noWallBacktrackCost: 2 }, recentCells(history, s.turn)),
       ),
     ).toBe('b7');
   });
