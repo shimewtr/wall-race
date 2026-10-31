@@ -15,7 +15,7 @@
 // 第 3 版（lookahead: 2）: 相手も第 2 版と同じように考えて返してくる、と想定する。
 
 import { candidateWalls, maxDetour } from '../engine/ai';
-import { type GameState, type Move, type Player, type Pos, applyMove, pawnMoves, shortestDistance } from '../engine/game';
+import { WALL_SLOTS, type GameState, type Move, type Player, type Pos, applyMove, pawnMoves, shortestDistance, wallFits } from '../engine/game';
 
 export interface GuideParams {
   // 壁を置くのは「相手の増加 − 自分の増加」がこの歩数以上のときだけ
@@ -43,6 +43,8 @@ export interface GuideParams {
   noWallBacktrackCost?: number;
   // 最短経路を1歩縮めない駒手に、縮めなかった歩数あたりで課すコスト（実験用）
   offPathCost?: number;
+  // 終盤で先着可能なとき、同方向の壁を端へ延ばせる余地へ課すコスト（実験用）
+  endgameExtensionCost?: number;
   // 相手の壁 1 枚でこの歩数以上遠回りさせられるときだけ、脅威を減らす守りの壁を候補にする
   guardThreatAtLeast?: number;
 }
@@ -120,6 +122,9 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number, recent:
         if (m.type === 'wall') {
           score -= params.wallCost ?? 0;
           if (s.wallsLeft[me] === 1) score -= params.lastWallCost ?? 0;
+          if (params.endgameExtensionCost && myDist <= 5 && lead(s) >= 0) {
+            score -= params.endgameExtensionCost * wallExtensionNetGain(after, m, me, op);
+          }
         } else if (recent.some((p) => p.x === m.x && p.y === m.y)) {
           score -= s.wallsLeft[me] === 0 ? (params.noWallBacktrackCost ?? params.backtrackCost ?? 0) : (params.backtrackCost ?? 0);
         }
@@ -133,6 +138,24 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number, recent:
       bestScore = score;
       best = m;
     }
+  }
+  return best;
+}
+
+function wallExtensionNetGain(after: GameState, move: Move, me: Player, op: Player): number {
+  if (move.type !== 'wall' || after.wallsLeft[me] === 0) return 0;
+  const opDist = shortestDistance(after, op);
+  const myDist = shortestDistance(after, me);
+  const anchors = move.o === 'h' ? [[move.x - 2, move.y], [move.x + 2, move.y]] : [[move.x, move.y - 2], [move.x, move.y + 2]];
+  let best = 0;
+  for (const [x, y] of anchors) {
+    if (x < 0 || y < 0 || x >= WALL_SLOTS || y >= WALL_SLOTS || !wallFits(after, x, y, move.o)) continue;
+    const walls = move.o === 'h' ? after.hWalls : after.vWalls;
+    const index = y * WALL_SLOTS + x;
+    walls[index] = 1;
+    const gain = shortestDistance(after, op) - opDist - (shortestDistance(after, me) - myDist);
+    walls[index] = 0;
+    best = Math.max(best, gain);
   }
   return best;
 }
