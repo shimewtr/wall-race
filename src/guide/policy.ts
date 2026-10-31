@@ -43,6 +43,8 @@ export interface GuideParams {
   noWallBacktrackCost?: number;
   // 最短経路を1歩縮めない駒手に、縮めなかった歩数あたりで課すコスト（実験用）
   offPathCost?: number;
+  // 自分の壁が尽きた終盤で先着可能なとき、相手の次の壁脅威に課すコスト（実験用）
+  endgameEvasionValue?: number;
   // 相手の壁 1 枚でこの歩数以上遠回りさせられるときだけ、脅威を減らす守りの壁を候補にする
   guardThreatAtLeast?: number;
 }
@@ -126,6 +128,15 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number, recent:
         if (m.type === 'pawn' && params.offPathCost) {
           const progress = myDist - shortestDistance(after, me);
           score -= Math.max(0, 1 - progress) * params.offPathCost;
+        }
+        if (
+          m.type === 'pawn' &&
+          params.endgameEvasionValue &&
+          s.wallsLeft[me] === 0 &&
+          myDist <= 5 &&
+          shortestDistance(s, op) >= myDist
+        ) {
+          score -= params.endgameEvasionValue * maxDetour(after, op);
         }
       }
     }
