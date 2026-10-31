@@ -14,6 +14,7 @@ const { values: args } = parseArgs({
     games: { type: 'string', default: '120' },
     depth: { type: 'string', default: '3' },
     top: { type: 'string', default: '30' },
+    seed: { type: 'string', default: '41000000' },
   },
 });
 
@@ -21,13 +22,14 @@ const champion = JSON.parse(readFileSync(join(import.meta.dirname, '..', '..', '
 const games = Number(args.games);
 const depth = Number(args.depth);
 const top = Number(args.top);
+const seed = Number(args.seed);
 const pool = new DiscoveryPool();
 const records = await pool.runAll(
   Array.from({ length: games }, (_, i) => ({
     weights: champion.weights,
     depth,
     guidePlayer: (i % 2) as 0 | 1,
-    seed: 41_000_000 + i,
+    seed: seed + i,
   })),
 );
 await pool.close();
@@ -60,7 +62,7 @@ const winningMeaningful = uniquePositions(winningRaw);
 
 console.log(`# 戦術発見用ログ: 手引き AI 対 第 ${champion.generation} 世代`);
 console.log();
-console.log(`対局: ${games} 局（${depth} 手読み） / 手引き AI 勝率 ${pct(won, games)} / 引き分け ${drawn} 局`);
+console.log(`対局: ${games} 局（${depth} 手読み、seed=${seed}） / 手引き AI 勝率 ${pct(won, games)} / 引き分け ${drawn} 局`);
 console.log(
   `判断の不一致: ${all.length} 局面 / 手引き敗戦中 ${losses.length} 局面 / 推定損失 1 点以上 ${meaningfulRaw.length} 局面（重複除去後 ${meaningful.length}）`,
 );
