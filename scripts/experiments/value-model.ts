@@ -204,6 +204,48 @@ const result = {
   models: { linear, nonlinear },
 };
 
+// 線形モデルの残差に対して、全特徴量ペアの積を1つずつ足す。
+// 多数の交互作用を同時に入れて過学習させず、未知対局で改善する候補だけを順位付けする。
+const logit = (p: number) => Math.log(Math.max(1e-9, Math.min(1 - 1e-9, p)) / Math.max(1e-9, 1 - Math.min(1 - 1e-9, p)));
+const standardizedRaw = (sample: Sample, index: number) => (sample.raw[index] - linear.means[index]) / linear.scales[index];
+const allPairInteractions = [];
+for (let left = 0; left < FEATURE_NAMES.length; left++) {
+  for (let right = left + 1; right < FEATURE_NAMES.length; right++) {
+    const products = train.map((sample) => standardizedRaw(sample, left) * standardizedRaw(sample, right));
+    const mean = products.reduce((sum, value) => sum + value, 0) / products.length;
+    const scale = Math.max(1e-6, Math.sqrt(products.reduce((sum, value) => sum + (value - mean) ** 2, 0) / products.length));
+    let coefficient = 0;
+    for (let iteration = 0; iteration < 30; iteration++) {
+      let gradient = -coefficient;
+      let hessian = 1;
+      for (let i = 0; i < train.length; i++) {
+        const z = (products[i] - mean) / scale;
+        const base = logit(predict(train[i], linear));
+        const p = 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, base + coefficient * z))));
+        gradient += (train[i].won - p) * z;
+        hessian += p * (1 - p) * z * z;
+      }
+      const delta = gradient / hessian;
+      coefficient += delta;
+      if (Math.abs(delta) < 1e-8) break;
+    }
+    const candidate = metrics(test, (sample) => {
+      const product = standardizedRaw(sample, left) * standardizedRaw(sample, right);
+      const z = (product - mean) / scale;
+      const base = logit(predict(sample, linear));
+      return 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, base + coefficient * z))));
+    });
+    allPairInteractions.push({
+      name: `${FEATURE_NAMES[left]}×${FEATURE_NAMES[right]}`,
+      coefficient,
+      brierGain: result.all.linear.brier - candidate.brier,
+      logLossGain: result.all.linear.logLoss - candidate.logLoss,
+      highConfidenceErrorGain: result.all.linear.highConfidenceError - candidate.highConfidenceError,
+    });
+  }
+}
+allPairInteractions.sort((a, b) => b.logLossGain - a.logLossGain);
+
 const printRow = (name: string, value: ReturnType<typeof evaluate>) => {
   console.log(`${name} (${value.current.n}局面):`);
   console.log(`  現行校正   Brier ${value.current.brier.toFixed(4)} / log loss ${value.current.logLoss.toFixed(4)} / 高信頼誤り ${(value.current.highConfidenceError * 100).toFixed(1)}%`);
@@ -221,4 +263,10 @@ const interactionCoefficients = interactionNames.map((name, i) => ({
 })).sort((a, b) => Math.abs(b.coefficient) - Math.abs(a.coefficient));
 console.log('交互作用の標準化係数:');
 for (const item of interactionCoefficients) console.log(`  ${item.name}: ${item.coefficient.toFixed(4)}`);
-writeFileSync('experiment-output.json', `${JSON.stringify({ ...result, interactionCoefficients }, null, 2)}\n`);
+console.log('全ペア交互作用の未知対局 log loss 改善上位:');
+for (const item of allPairInteractions.slice(0, 12)) {
+  console.log(
+    `  ${item.name}: log loss ${item.logLossGain >= 0 ? '+' : ''}${item.logLossGain.toFixed(5)} / Brier ${item.brierGain >= 0 ? '+' : ''}${item.brierGain.toFixed(5)} / 係数 ${item.coefficient.toFixed(4)}`,
+  );
+}
+writeFileSync('experiment-output.json', `${JSON.stringify({ ...result, interactionCoefficients, allPairInteractions }, null, 2)}\n`);
