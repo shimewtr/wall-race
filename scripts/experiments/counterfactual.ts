@@ -260,6 +260,39 @@ if (wallGroups.some(([, group]) => group.length)) {
   }
 }
 
+const pawnGroups = [
+  ['改善', improved.filter((result) => result.disagreement.pawnComparison)],
+  ['同じ・悪化', [...unchanged, ...worsened].filter((result) => result.disagreement.pawnComparison)],
+] as const;
+if (pawnGroups.some(([, group]) => group.length)) {
+  console.log('\n## 前進 → 前進の勝敗別特徴');
+  for (const [name, group] of pawnGroups) {
+    const disagreements = group.map((result) => result.disagreement);
+    console.log(`- ${name}（${group.length}局面）:`);
+    console.log(
+      `  - 残り歩数平均: 自分 ${average(disagreements.map((d) => d.myDist))} / 相手 ${average(disagreements.map((d) => d.opDist))}`,
+    );
+    console.log(
+      `  - 残り壁平均: 自分 ${average(disagreements.map((d) => d.myWalls))} / 相手 ${average(disagreements.map((d) => d.opWalls))}`,
+    );
+    console.log(
+      `  - その手の前進量: 手引き ${average(disagreements.map((d) => d.pawnComparison!.guide.progress))} / 探索AI ${average(disagreements.map((d) => d.pawnComparison!.expert.progress))}`,
+    );
+    console.log(
+      `  - 手後に相手から受ける壁脅威: 手引き ${average(disagreements.map((d) => d.pawnComparison!.guide.opThreat))} / 探索AI ${average(disagreements.map((d) => d.pawnComparison!.expert.opThreat))}`,
+    );
+    console.log(
+      `  - 手後の最短ルート多様性: 手引き ${average(disagreements.map((d) => d.pawnComparison!.guide.myRoutes))} / 探索AI ${average(disagreements.map((d) => d.pawnComparison!.expert.myRoutes))}`,
+    );
+    console.log(
+      `  - 直近マスへ戻る: 手引き ${disagreements.filter((d) => d.pawnComparison!.guide.backtrack).length}/${group.length} / 探索AI ${disagreements.filter((d) => d.pawnComparison!.expert.backtrack).length}/${group.length}`,
+    );
+    console.log(
+      `  - 候補間比較: 探索AIが壁脅威を減らす ${disagreements.filter((d) => d.pawnComparison!.expert.opThreat < d.pawnComparison!.guide.opThreat).length}/${group.length}、探索AIの前進量が小さい ${disagreements.filter((d) => d.pawnComparison!.expert.progress < d.pawnComparison!.guide.progress).length}/${group.length}、自分の壁0枚 ${disagreements.filter((d) => d.myWalls === 0).length}/${group.length}`,
+    );
+  }
+}
+
 console.log('\n## 勝敗が変わった局面');
 const changed = results.filter((result) => score(result, 'guide') !== score(result, 'expert'));
 if (changed.length === 0) console.log('- なし');
