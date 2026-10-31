@@ -177,6 +177,24 @@ if (wallGroups.some(([, group]) => group.length)) {
     console.log(
       `  - 両候補壁のアンカー距離: ${average(present(disagreements.map((d) => wallAnchorDistance(d.guideMove, d.expertMove))))}`,
     );
+    const pairedConditions = [
+      ['探索AI壁が既存壁へ近い', (d: Disagreement) => {
+        const guide = wallGeometry(d, 'guide')!.nearest;
+        const expert = wallGeometry(d, 'expert')!.nearest;
+        return guide !== null && expert !== null && expert < guide;
+      }],
+      ['探索AI壁が相手駒から遠い', (d: Disagreement) => d.wallComparison!.expert.pawnDistanceToWall > d.wallComparison!.guide.pawnDistanceToWall],
+      ['探索AI壁が代表最短路を後で切る', (d: Disagreement) => {
+        const guide = d.wallComparison!.guide.routeCutStep;
+        const expert = d.wallComparison!.expert.routeCutStep;
+        return guide !== null && expert !== null && expert > guide;
+      }],
+      ['探索AI壁の即時正味効果が同等以上', (d: Disagreement) => d.wallComparison!.expert.netGain >= d.wallComparison!.guide.netGain],
+      ['探索AI壁の連結2枚目効果が小さい', (d: Disagreement) => d.wallComparison!.expert.extensionNetGain < d.wallComparison!.guide.extensionNetGain],
+    ] as const;
+    console.log(
+      `  - 候補間比較: ${pairedConditions.map(([label, includes]) => `${label} ${disagreements.filter(includes).length}/${group.length}`).join('、')}`,
+    );
   }
   console.log('- 条件別の内訳（改善 / 同じ・悪化）:');
   const conditions = [
