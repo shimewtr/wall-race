@@ -290,6 +290,15 @@ if (pawnGroups.some(([, group]) => group.length)) {
     console.log(
       `  - 候補間比較: 探索AIが壁脅威を減らす ${disagreements.filter((d) => d.pawnComparison!.expert.opThreat < d.pawnComparison!.guide.opThreat).length}/${group.length}、探索AIの前進量が小さい ${disagreements.filter((d) => d.pawnComparison!.expert.progress < d.pawnComparison!.guide.progress).length}/${group.length}、自分の壁0枚 ${disagreements.filter((d) => d.myWalls === 0).length}/${group.length}`,
     );
+    const endgameEvasion = (d: Disagreement) =>
+      d.myDist <= 5 &&
+      d.opDist >= d.myDist &&
+      d.myWalls === 0 &&
+      d.pawnComparison!.expert.opThreat < d.pawnComparison!.guide.opThreat &&
+      d.pawnComparison!.expert.progress < d.pawnComparison!.guide.progress;
+    console.log(
+      `  - 条件: 自分5歩以内 ${disagreements.filter((d) => d.myDist <= 5).length}/${group.length}、先着可能 ${disagreements.filter((d) => d.opDist >= d.myDist).length}/${group.length}、壁脅威を2歩以上減らす ${disagreements.filter((d) => d.pawnComparison!.guide.opThreat - d.pawnComparison!.expert.opThreat >= 2).length}/${group.length}、終盤先行・壁切れ・低前進で脅威回避 ${disagreements.filter(endgameEvasion).length}/${group.length}`,
+    );
   }
 }
 
