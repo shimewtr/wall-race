@@ -35,7 +35,7 @@ const { values: args } = parseArgs({
 
 const root = join(import.meta.dirname, '..', '..');
 const championFile = JSON.parse(readFileSync(join(root, 'training', 'champion.json'), 'utf8')) as { generation: number; weights: Partial<Weights> };
-const stateFile = JSON.parse(readFileSync(join(root, 'training', 'state.json'), 'utf8')) as { theta: Partial<Weights>; totalIterations: number };
+const stateFile = JSON.parse(readFileSync(join(root, 'training', 'state.json'), 'utf8')) as { theta: Partial<Weights>; iteration: number };
 const champion = withDefaults(championFile.weights);
 const training = withDefaults(stateFile.theta);
 const games = Number(args.games);
@@ -160,7 +160,7 @@ const kinds = (source: number[]) => {
 };
 
 console.log(`# 学習中重み対第${championFile.generation}世代の判断差`);
-console.log(`学習時点: 累計${stateFile.totalIterations}反復、seed=${seed}`);
+console.log(`学習時点: 累計${stateFile.iteration}反復、seed=${seed}`);
 console.log(`収集: ${new Set(samples.map((sample) => sample.game)).size}局・${samples.length}局面、判断差${changes.length}`);
 console.log(`終局追跡: 学習中重みの手で改善${improved.length} / 同じ${same.length} / 悪化${worsened.length}`);
 console.log(`- 改善: ${kinds(improved)}`);
@@ -178,5 +178,5 @@ for (const row of contrasts) console.log(`- ${row.name}: 改善${row.improved.to
 console.log('\n## 重みの変化');
 for (const name of FEATURE_NAMES) console.log(`- ${name}: ${champion[name].toFixed(3)} → ${training[name].toFixed(3)}（${(training[name] - champion[name]).toFixed(3)}）`);
 
-const output = { generation: championFile.generation, totalIterations: stateFile.totalIterations, seed, samples: samples.length, changes: changes.length, improved: improved.length, same: same.length, worsened: worsened.length, contrasts };
+const output = { generation: championFile.generation, totalIterations: stateFile.iteration, seed, samples: samples.length, changes: changes.length, improved: improved.length, same: same.length, worsened: worsened.length, contrasts };
 writeFileSync('experiment-output.json', `${JSON.stringify(output, null, 2)}\n`);
