@@ -41,6 +41,8 @@ export interface GuideParams {
   backtrackCost?: number;
   // 自分の壁が尽きた後だけ、戻る手に課す歩数換算のコストを上書きする
   noWallBacktrackCost?: number;
+  // 最短経路を1歩縮めない駒手に、縮めなかった歩数あたりで課すコスト（実験用）
+  offPathCost?: number;
   // 相手の壁 1 枚でこの歩数以上遠回りさせられるときだけ、脅威を減らす守りの壁を候補にする
   guardThreatAtLeast?: number;
 }
@@ -89,6 +91,7 @@ export function guideMove(s: GameState, params: GuideParams = GUIDE_V1, recent: 
 function lookaheadMove(s: GameState, params: GuideParams, level: number, recent: Pos[]): Move {
   const me = s.turn;
   const op = (1 - me) as Player;
+  const myDist = shortestDistance(s, me);
   // 相手がまだ遠いうちは壁を候補に入れない（温存）
   const walls = shortestDistance(s, op) <= params.saveWallsWhileOpponentFarther ? guideWalls(s, params) : [];
   const candidates: Move[] = [...pawnMoves(s).map((p): Move => ({ type: 'pawn', x: p.x, y: p.y })), ...walls];
@@ -115,6 +118,10 @@ function lookaheadMove(s: GameState, params: GuideParams, level: number, recent:
           if (s.wallsLeft[me] === 1) score -= params.lastWallCost ?? 0;
         } else if (recent.some((p) => p.x === m.x && p.y === m.y)) {
           score -= s.wallsLeft[me] === 0 ? (params.noWallBacktrackCost ?? params.backtrackCost ?? 0) : (params.backtrackCost ?? 0);
+        }
+        if (m.type === 'pawn' && params.offPathCost) {
+          const progress = myDist - shortestDistance(after, me);
+          score -= Math.max(0, 1 - progress) * params.offPathCost;
         }
       }
     }
