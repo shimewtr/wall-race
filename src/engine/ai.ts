@@ -92,8 +92,6 @@ export interface SearchOptions {
   rootDistanceIncreasePenalty?: number;
   // 根で自分の最短距離を伸ばす壁への1歩あたりの減点（1歩=10点）。深読みの壁品質を軽い探索へ移す実験用。
   rootSelfHarmWallPenalty?: number;
-  // 壁脅威の価値を最短ルート本数差の大きさで変える相互作用（実験用）。
-  threatRouteInteraction?: number;
 }
 
 export const REPEAT_PENALTY = 8;
@@ -465,7 +463,6 @@ export function evaluate(
   w: Weights = DEFAULT_WEIGHTS,
   myDist?: number,
   opDist?: number,
-  threatRouteInteraction = 0,
 ): number {
   if (s.winner !== null) return s.winner === s.turn ? WIN : -WIN;
   if (s.draw) return 0;
@@ -473,14 +470,13 @@ export function evaluate(
     s,
     myDist,
     opDist,
-    w.wallThreat !== 0 || threatRouteInteraction !== 0,
-    w.routeDiversity !== 0 || threatRouteInteraction !== 0,
+    w.wallThreat !== 0,
+    w.routeDiversity !== 0,
     w.wallChain !== 0,
     w.netWallThreat !== 0,
   );
   let score = 0;
   for (const k of FEATURE_NAMES) score += w[k] * f[k];
-  score += threatRouteInteraction * f.wallThreat * Math.abs(f.routeDiversity);
   return score;
 }
 
@@ -643,7 +639,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
       if (st.winner === null) return 0;
       return st.winner === st.turn ? WIN - ply : -WIN + ply;
     }
-    if (depth === 0) return evaluate(st, weights, myDist, opDist, opts.threatRouteInteraction);
+    if (depth === 0) return evaluate(st, weights, myDist, opDist);
     let best = -Infinity;
     for (const c of orderedMoves(st)) {
       const [cm, co] = childDistances(c, myDist, opDist);
@@ -654,7 +650,7 @@ export function search(s: GameState, opts: SearchOptions): SearchResult {
       if (v > alpha) alpha = v;
       if (alpha >= beta) break;
     }
-    return best === -Infinity ? evaluate(st, weights, myDist, opDist, opts.threatRouteInteraction) : best;
+    return best === -Infinity ? evaluate(st, weights, myDist, opDist) : best;
   };
 
   const rootMoves = orderedMoves(s, opts.wideRoot ?? WIDE_ROOT_DEFAULT);
