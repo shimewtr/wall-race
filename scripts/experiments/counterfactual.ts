@@ -18,6 +18,7 @@ const { values: args } = parseArgs({
     depth: { type: 'string', default: '3' },
     'rollout-depth': { type: 'string', default: '3' },
     kind: { type: 'string', default: 'all' },
+    seed: { type: 'string', default: '51000000' },
   },
 });
 
@@ -27,6 +28,7 @@ const top = Number(args.top);
 const depth = Number(args.depth);
 const rolloutDepth = Number(args['rollout-depth']);
 const requestedKind = args.kind;
+const seed = Number(args.seed);
 
 const discoveryPool = new DiscoveryPool();
 const gamesFound = await discoveryPool.runAll(
@@ -34,7 +36,7 @@ const gamesFound = await discoveryPool.runAll(
     weights: champion.weights,
     depth,
     guidePlayer: (i % 2) as 0 | 1,
-    seed: 51_000_000 + i,
+    seed: seed + i,
   })),
 );
 await discoveryPool.close();
@@ -106,6 +108,7 @@ const wallGeometry = (disagreement: Disagreement, branch: 'guide' | 'expert') =>
 console.log(`# 反実仮想分析: 手引き AI 対 第 ${champion.generation} 世代`);
 console.log();
 console.log(`発見対局: ${games} 局（${depth} 手読み）`);
+console.log(`シード: ${seed}`);
 console.log(`終局追跡: 敗戦中・推定損失1点以上の上位 ${results.length} 局面（${rolloutDepth} 手読み）`);
 console.log(`不一致型: ${requestedKind}`);
 console.log('各局面で最初の候補手だけを変え、その後は同じ探索 AI 同士で終局まで指しています。');
