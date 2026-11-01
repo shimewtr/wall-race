@@ -7,7 +7,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { type SearchOptions, type Weights, search, withDefaults } from '../../src/engine/ai';
+import { FEATURE_NAMES, type SearchOptions, type Weights, search, withDefaults } from '../../src/engine/ai';
 import { type GameState, applyMove, initialState, isOver } from '../../src/engine/game';
 import { OPENING_PLIES, rngFrom } from '../../src/train/match';
 import { PairPool } from '../lib/pool';
@@ -27,6 +27,7 @@ const { values: args } = parseArgs({
 const CHAMPION = join(import.meta.dirname, '..', '..', 'training', 'champion.json');
 const DEPTH4_TEACHER = join(import.meta.dirname, '..', '..', 'training', 'depth4-teacher.json');
 const STATE = join(import.meta.dirname, '..', '..', 'training', 'state.json');
+const HISTORY = join(import.meta.dirname, '..', '..', 'training', 'history.jsonl');
 // champion / depth4-teacher / training / initial / JSON / champion+JSON（チャンピオンの重みの一部だけ変える）
 function weights(spec: string): Weights {
   if (spec.startsWith('champion+')) return { ...weights('champion'), ...JSON.parse(spec.slice('champion+'.length)) };
@@ -34,6 +35,21 @@ function weights(spec: string): Weights {
   if (spec === 'depth4-teacher') return withDefaults(JSON.parse(readFileSync(DEPTH4_TEACHER, 'utf8')).weights);
   if (spec === 'training') {
     return existsSync(STATE) ? withDefaults(JSON.parse(readFileSync(STATE, 'utf8')).theta) : withDefaults();
+  }
+  if (spec.startsWith('recent-average:')) {
+    const count = Number(spec.slice('recent-average:'.length));
+    if (!Number.isInteger(count) || count < 1) throw new Error(`invalid recent average count: ${count}`);
+    const rows = readFileSync(HISTORY, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { championGeneration: number; theta: Partial<Weights> })
+      .filter((row) => row.championGeneration === JSON.parse(readFileSync(CHAMPION, 'utf8')).generation)
+      .slice(-count);
+    if (rows.length !== count) throw new Error(`recent average needs ${count} rows, found ${rows.length}`);
+    return withDefaults(Object.fromEntries(FEATURE_NAMES.map((name) => [
+      name,
+      rows.reduce((sum, row) => sum + withDefaults(row.theta)[name], 0) / rows.length,
+    ])));
   }
   if (spec === 'champion') {
     return existsSync(CHAMPION) ? withDefaults(JSON.parse(readFileSync(CHAMPION, 'utf8')).weights) : withDefaults();
