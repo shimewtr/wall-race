@@ -1,0 +1,30 @@
+{
+  "generation": 13,
+  "weights": {
+    "pathDiff": 10,
+    "rowDiff": -0.775,
+    "wallDiff": 21.737,
+    "urgency": 673.569,
+    "wallsWhenClose": 56.593,
+    "center": -1.017,
+    "adjacent": 3.791,
+    "lockedRace": 29.568,
+    "wallThreat": 1.828,
+    "netWallThreat": 7.014,
+    "wallChain": 2.734,
+    "routeDiversity": -1.346
+  },
+  "promotedAt": "2026-11-05T22:07:35.468Z",
+  "source": "actions-1",
+  "gate": {
+    "score": 0.55,
+    "byDepth": {
+      "3": 0.55
+    }
+  },
+  "vsInitial": 0.825,
+  "vsInitialByDepth": {
+    "3": 0.825
+  },
+  "gateVersion": "d3x200-confirm800t525-o6t3d2-rnarrow"
+}
