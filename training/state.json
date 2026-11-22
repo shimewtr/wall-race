@@ -1,21 +1,21 @@
 {
-  "iteration": 300115,
-  "stepIteration": 186443,
+  "iteration": 300152,
+  "stepIteration": 186480,
   "featureSeedVersion": 3,
-  "pairs": 26656224,
+  "pairs": 26660960,
   "theta": {
     "pathDiff": 10,
-    "rowDiff": -1.19,
-    "wallDiff": 22.6,
-    "urgency": 671.877,
-    "wallsWhenClose": 56.567,
-    "center": -1.007,
-    "adjacent": 3.528,
-    "lockedRace": 29.608,
+    "rowDiff": -1.193,
+    "wallDiff": 22.61,
+    "urgency": 671.912,
+    "wallsWhenClose": 56.589,
+    "center": -1.002,
+    "adjacent": 3.52,
+    "lockedRace": 29.595,
     "wallThreat": 0.461,
-    "netWallThreat": 8.421,
-    "wallChain": 3.865,
-    "routeDiversity": -1.622
+    "netWallThreat": 8.429,
+    "wallChain": 3.863,
+    "routeDiversity": -1.628
   },
-  "updatedAt": "2026-11-22T02:58:56.292Z"
+  "updatedAt": "2026-11-22T03:01:23.965Z"
 }
